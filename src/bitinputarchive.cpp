@@ -2,203 +2,1152 @@
 // PVS-Studio Static Code Analyzer for C, C++ and C#: http://www.viva64.com
 
 /*
- * bit7z - A C++ static library to interface with the 7-zip DLLs.
- * Copyright (c) 2014-2019  Riccardo Ostani - All Rights Reserved.
+ * bit7z - A C++ static library to interface with the 7-zip shared libraries.
+ * Copyright (c) Riccardo Ostani - All Rights Reserved.
  *
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * Bit7z is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with bit7z; if not, see https://www.gnu.org/licenses/.
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-#include "../include/bitinputarchive.hpp"
+#include "bitinputarchive.hpp"
 
-#include "../include/bitexception.hpp"
-#include "../include/cstdinstream.hpp"
-#include "../include/opencallback.hpp"
-#include "../include/extractcallback.hpp"
+#include "bitarchiveitemoffset.hpp"
+#include "biterror.hpp"
+#include "bitexception.hpp"
+#include "bitpropvariant.hpp"
+#include "bittypes.hpp"
+#include "bitformat.hpp"
+#include "internal/bufferextractcallback.hpp"
+#include "internal/cbufferinstream.hpp"
+#include "internal/cfileinstream.hpp"
+#include "internal/cmultivolumeinstream.hpp"
+#include "internal/cstdinstream.hpp"
+#include "internal/extractcallback.hpp"
+#include "internal/fileextractcallback.hpp"
+#include "internal/fixedbufferextractcallback.hpp"
+#include "internal/fsutil.hpp"
+#include "internal/opencallback.hpp"
+#include "internal/openerror.hpp"
+#include "internal/operationresult.hpp"
+#include "internal/rawdataextractcallback.hpp"
+#include "internal/sequentialextractcallback.hpp"
+#include "internal/streamextractcallback.hpp"
+#include "internal/stringutil.hpp"
+#include "internal/util.hpp"
 
-#include "Common/MyCom.h"
-#include "7zip/Common/FileStreams.h"
-#include "7zip/Common/StreamObjects.h"
+#ifdef BIT7Z_AUTO_FORMAT
+#include "internal/formatdetect.hpp"
+#endif
 
-using namespace bit7z;
+#include <algorithm>
+#include <cstddef>
+#include <cstdint>
+#include <exception>
+#include <istream>
+#include <limits>
+#include <map>
+#include <ostream>
+#include <string>
+#include <utility>
+#include <vector>
+
 using namespace NWindows;
 using namespace NArchive;
 
-#ifdef BIT7Z_AUTO_FORMAT
 namespace bit7z {
-    namespace BitFormat {
-        const BitInFormat& detectFormatFromExt( const wstring& in_file );
-        const BitInFormat& detectFormatFromSig( IInStream* stream );
+
+namespace {
+void allowTailData( IInArchive* inArchive ) noexcept {
+    CMyComPtr< IArchiveAllowTail > allowTail;
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+    ( void )inArchive->QueryInterface( bit7z::IID_IArchiveAllowTail, reinterpret_cast< void** >( &allowTail ) );
+    if ( allowTail != nullptr ) {
+        ( void )allowTail->AllowTail( 1 );
     }
+}
+
+#ifdef BIT7Z_AUTO_FORMAT
+// Executable formats that 7-Zip opens strictly (no appended data) unless IArchiveAllowTail is enabled.
+BIT7Z_NODISCARD
+auto isExecutableFormat( const BitInFormat& format ) noexcept -> bool {
+    return format == BitFormat::Pe || format == BitFormat::Elf || format == BitFormat::Macho || format == BitFormat::TE;
 }
 #endif
 
-CMyComPtr< IInArchive > initArchiveObject( const Bit7zLibrary& lib, const GUID* format_GUID ) {
-    CMyComPtr< IInArchive > arc_object;
-    lib.createArchiveObject( format_GUID, &::IID_IInArchive, reinterpret_cast< void** >( &arc_object ) );
-    return arc_object;
+BIT7Z_NODISCARD
+auto openInputArchive(
+    IInArchive* inArchive,
+    IInStream* inStream,
+    ArchiveStartOffset startOffset,
+    OpenCallback* openCallback
+) noexcept -> HRESULT {
+    // Making the executable format handlers (PE, TE, ELF, Mach-O) accept files
+    // with data appended after the executable image (e.g., SFX archives), like 7-Zip does.
+    allowTailData( inArchive );
+
+    if ( startOffset == ArchiveStartOffset::FileStart ) {
+        static constexpr UInt64 maxCheckStartPosition = 0;
+        return inArchive->Open( inStream, &maxCheckStartPosition, openCallback );
+    }
+    return inArchive->Open( inStream, nullptr, openCallback );
 }
 
-IInArchive* BitInputArchive::openArchiveStream( const BitArchiveHandler& handler,
-                                                const wstring& name,
-                                                IInStream* in_stream ) {
+BIT7Z_NODISCARD
+auto makeOpenError( const OpenCallback* openCallback, IInArchive* inArchive, HRESULT res ) -> std::error_code {
+    if ( openCallback->passwordWasAsked() ) {
+        return make_error_code( OperationResult::OpenErrorEncrypted );
+    }
+
+    BitPropVariant errorFlagsProp;
+    ( void )inArchive->GetArchiveProperty( static_cast< PROPID >( BitProperty::ErrorFlags ), &errorFlagsProp );
+    if ( errorFlagsProp.isUInt32() ) {
+        const auto errorFlags = errorFlagsProp.getUInt32();
+        if ( errorFlags != 0 ) {
+            return make_open_error_code( errorFlags );
+        }
+    }
+    if ( res == S_FALSE ) {
+        // 7-Zip reported no specific error flags. An S_FALSE result means the handler couldn't
+        // open the stream as the requested format (wrong format, or corrupted/truncated data)
+        // but set no flag (e.g., the Pe handler rejecting trailing data). We report it as IsNotArc
+        // instead of the opaque raw HRESULT (S_FALSE == 1).
+        return make_error_code( OpenError::IsNotArc );
+    }
+    return make_hresult_code( res );
+}
+} // namespace
+
 #ifdef BIT7Z_AUTO_FORMAT
-    bool detected_by_signature = false;
+/* Tries opening the stream as one of the archive formats commonly embedded in SFX executables.
+ * On success, sets mDetectedFormat and returns the opened archive; returns nullptr otherwise. */
+auto BitInputArchive::tryOpenSfxArchive(
+    IInStream* inStream,
+    OpenCallback* openCallback,
+    const fs::path& name
+) -> IInArchive* {
+    // Note: Zip must be the last candidate, as its handler matches any PK record within the search limit.
+    // Note 2: Cannot be constexpr on MSVC 2015.
+    // ReSharper disable once CppVariableCanBeMadeConstexpr
+    static const std::initializer_list< const BitInFormat* > kSfxFormats = {
+        &BitFormat::SevenZip, &BitFormat::Rar5, &BitFormat::Rar, &BitFormat::Cab, &BitFormat::Zip
+    };
+    // Limit within which the handlers search for the start of the embedded archive (like 7-Zip's scan limit).
+    static constexpr UInt64 kSfxSearchLimit = 1ULL << 23ULL; // 8 MiB
+
+    for ( const auto* sfxFormat : kSfxFormats ) {
+        CMyComPtr< IInArchive > sfxArchive;
+        try {
+            sfxArchive = mArchiveHandler.library().initInArchive( *sfxFormat );
+        } catch ( const BitException& ) {
+            continue; // The loaded 7-Zip library doesn't provide this format's handler.
+        }
+        inStream->Seek( 0, STREAM_SEEK_SET, nullptr );
+        if ( sfxArchive->Open( inStream, &kSfxSearchLimit, openCallback ) == S_OK ) {
+            mDetectedFormat = sfxFormat;
+            return sfxArchive.Detach();
+        }
+        if ( openCallback->passwordWasAsked() ) {
+            // The handler found an embedded archive but needs a password to open it: stop searching.
+            throw BitException(
+                "Could not open the archive",
+                make_error_code( OperationResult::OpenErrorEncrypted ),
+                pathToTstring( name )
+            );
+        }
+    }
+    inStream->Seek( 0, STREAM_SEEK_SET, nullptr );
+    return nullptr;
+}
+#endif
+
+auto BitInputArchive::openArchiveStream(
+    const fs::path& name,
+    IInStream* inStream,
+    ArchiveStartOffset startOffset
+) -> IInArchive* {
+    const auto openCallback = bit7z::make_com< OpenCallback >( mArchiveHandler, name );
+
+#ifdef BIT7Z_AUTO_FORMAT
+    bool detectedBySignature = false;
     if ( *mDetectedFormat == BitFormat::Auto ) {
-        // Detecting format of the input file
-        mDetectedFormat = &( BitFormat::detectFormatFromSig( in_stream ) );
-        detected_by_signature = true;
+        // Format detection from file extension didn't run, or it didn't find a match.
+        // Hence, we detect the format from the file signature.
+        mDetectedFormat = &detectFormatFromSignature( inStream );
+        detectedBySignature = true;
     }
-    GUID format_GUID = mDetectedFormat->guid();
-#else
-    GUID format_GUID = handler.format().guid();
-#endif
-    // NOTE: CMyComPtr is still needed: if an error occurs and an exception is thrown,
-    // the IInArchive object is deleted automatically!
-    CMyComPtr< IInArchive > in_archive = initArchiveObject( handler.library(), &format_GUID );
 
-    // Creating open callback for the file
-    CMyComPtr< IArchiveOpenCallback > open_callback = new OpenCallback( handler, name );
+    // Here, a format was detected, either from the file extension, or from the file signature.
+    // If no format was detected from either, an exception would have been thrown after failing to detect
+    // the format from the signature.
+    if (
+        mArchiveHandler.format() == BitFormat::Auto &&
+        startOffset == ArchiveStartOffset::None &&
+        isExecutableFormat( *mDetectedFormat )
+    ) {
+        // Executable formats are what 7-Zip calls "pre-arc" formats: an embedded archive, if present,
+        // takes precedence over the executable containing it (e.g., SFX archives, installers).
+        IInArchive* sfxArchive = tryOpenSfxArchive( inStream, openCallback, name );
+        if ( sfxArchive != nullptr ) {
+            // Detected an embedded archive, i.e., the file is an SFX archive.
+            return sfxArchive;
+        }
+    }
 
-    // Trying to open the file with the detected format
-    HRESULT res = in_archive->Open( in_stream, nullptr, open_callback );
+    // Note: CMyComPtr is still needed: if an error occurs and an exception is thrown,
+    // the IInArchive object is deleted automatically.
+    CMyComPtr< IInArchive > inArchive = mArchiveHandler.library().initInArchive( *mDetectedFormat );
+    HRESULT res = openInputArchive( inArchive, inStream, startOffset, openCallback );
+    if ( res == S_OK ) {
+        return inArchive.Detach();
+    }
 
-#ifdef BIT7Z_AUTO_FORMAT
-    if ( res != S_OK && handler.format() == BitFormat::Auto && !detected_by_signature ) {
-        /* User wanted auto detection of format, an extension was detected but opening failed, so we try a more
+    if ( mArchiveHandler.format() == BitFormat::Auto && !detectedBySignature ) {
+        /* User wanted auto-detection of the format, an extension was detected but opening failed, so we try a more
          * precise detection by checking the signature.
-         * NOTE: If user specified explicitly a format (i.e. not BitFormat::Auto), this check is not performed
-         *       and an exception is thrown (next if)!
-         * NOTE 2: If signature detection was already performed (detected_by_signature == false), it detected a
-         *         a wrong format, no further check can be done and an exception must be thrown (next if)! */
-        mDetectedFormat = &( BitFormat::detectFormatFromSig( in_stream ) );
-        format_GUID = mDetectedFormat->guid();
-        in_archive = initArchiveObject( handler.library(), &format_GUID );
-        res = in_archive->Open( in_stream, nullptr, open_callback );
-    }
-#endif
+         * Note: if the user explicitly specified a format (i.e., not BitFormat::Auto), this check is not performed,
+         * and an exception is thrown.
+         * Note 2: if signature detection was already performed (detectedBySignature == true), it detected
+         * a wrong format (since the open failed), so no further check can be done, and an exception must be thrown. */
 
-    if ( res != S_OK ) {
-        throw BitException( L"Cannot open archive '" + name + L"'", ERROR_OPEN_FAILED );
+        // Opening the file might have changed the current file pointer, so we reset it to the beginning of the file
+        // to correctly read the file signature.
+        inStream->Seek( 0, STREAM_SEEK_SET, nullptr );
+        mDetectedFormat = &detectFormatFromSignature( inStream );
+        if ( startOffset == ArchiveStartOffset::None && isExecutableFormat( *mDetectedFormat ) ) {
+            // The extension pointed to a non-executable format, so the first SFX scan above was skipped.
+            // Now that the signature reveals an executable, we must scan here too: otherwise, an SFX archive
+            // with a misleading extension would be opened as its executable wrapper (e.g., Pe), losing access
+            // to the embedded archive.
+            IInArchive* sfxArchive = tryOpenSfxArchive( inStream, openCallback, name );
+            if ( sfxArchive != nullptr ) {
+                return sfxArchive;
+            }
+        }
+        inArchive = mArchiveHandler.library().initInArchive( *mDetectedFormat );
+        res = openInputArchive( inArchive, inStream, ArchiveStartOffset::None, openCallback );
+        if ( res == S_OK ) {
+            return inArchive.Detach();
+        }
     }
-
-    return in_archive.Detach();
-}
-
-BitInputArchive::BitInputArchive( const BitArchiveHandler& handler, const wstring& in_file ) {
-    auto* file_stream_spec = new CInFileStream;
-    CMyComPtr< IInStream > file_stream = file_stream_spec;
-    if ( !file_stream_spec->Open( in_file.c_str() ) ) {
-        throw BitException( L"Cannot open archive file '" + in_file + L"'", ERROR_OPEN_FAILED );
-    }
-#ifdef BIT7Z_AUTO_FORMAT
-    //if auto, detect format from signature here (and try later from content if this fails), otherwise try passed format
-    mDetectedFormat = ( handler.format() == BitFormat::Auto ?
-                        &BitFormat::detectFormatFromExt( in_file ) : &handler.format() );
 #else
-    mDetectedFormat = &handler.format();
+    // NOTE: CMyComPtr ensures the IInArchive is released if an exception is thrown.
+    CMyComPtr< IInArchive > inArchive = mArchiveHandler.library().initInArchive( mArchiveHandler.format() );
+    const HRESULT res = openInputArchive( inArchive, inStream, startOffset, openCallback );
+    if ( res == S_OK ) {
+        return inArchive.Detach();
+    }
 #endif
-    mInArchive = openArchiveStream( handler, in_file, file_stream );
+
+    throw BitException(
+        "Could not open the archive",
+        makeOpenError( openCallback, inArchive, res ),
+        pathToTstring( name )
+    );
 }
 
-BitInputArchive::BitInputArchive( const BitArchiveHandler& handler, const vector< byte_t >& in_buffer ) {
-    auto* buf_stream_spec = new CBufInStream;
-    CMyComPtr< IInStream > buf_stream = buf_stream_spec;
-    buf_stream_spec->Init( in_buffer.data(), in_buffer.size() );
-    mDetectedFormat = &handler.format(); //if auto, detect format from content, otherwise try passed format
-    mInArchive = openArchiveStream( handler, L".", buf_stream );
+namespace {
+auto detectFormat( const BitInFormat& format, const fs::path& arcPath ) -> const BitInFormat* {
+#if defined( BIT7Z_AUTO_FORMAT ) && defined( BIT7Z_DETECT_FROM_EXTENSION )
+    return ( format == BitFormat::Auto ? &detectFormatFromExtension( arcPath ) : &format );
+#else
+    ( void )arcPath; // unused when auto format detection is enabled!
+    return &format;
+#endif
+}
+} // namespace
+
+BitInputArchive::BitInputArchive(
+    const BitAbstractArchiveHandler& handler,
+    const tstring& inFile,
+    ArchiveStartOffset startOffset
+) : BitInputArchive( handler, tstringToPath( inFile ), startOffset ) {}
+
+BitInputArchive::BitInputArchive(
+    const BitAbstractArchiveHandler& handler,
+    const fs::path& arcPath,
+    ArchiveStartOffset startOffset
+) : mDetectedFormat{ detectFormat( handler.format(), arcPath ) },
+    mArchiveHandler{ handler },
+    mArchivePath{ pathToTstring( arcPath ) } {
+    CMyComPtr< IInStream > fileStream;
+    if ( *mDetectedFormat != BitFormat::Split && arcPath.extension() == ".001" ) {
+        fileStream = bit7z::make_com< CMultiVolumeInStream, IInStream >( arcPath );
+    } else {
+        fileStream = bit7z::make_com< CFileInStream, IInStream >( arcPath.native() );
+    }
+    mInArchive = openArchiveStream( arcPath, fileStream, startOffset );
 }
 
-BitInputArchive::BitInputArchive( const BitArchiveHandler& handler, std::istream& in_stream ) {
-    CMyComPtr< IInStream > std_stream = new CStdInStream( in_stream );
-    mDetectedFormat = &handler.format(); //if auto, detect format from content, otherwise try passed format
-    mInArchive = openArchiveStream( handler, L".", std_stream );
+BitInputArchive::BitInputArchive(
+    const BitAbstractArchiveHandler& handler,
+    const buffer_t& inBuffer,
+    ArchiveStartOffset startOffset
+) : mDetectedFormat{ &handler.format() }, // if auto, detect the format from content, otherwise try the passed format.
+    mArchiveHandler{ handler } {
+    const auto bufStream = bit7z::make_com< CBufferInStream, IInStream >( inBuffer );
+    mInArchive = openArchiveStream( fs::path{}, bufStream, startOffset );
 }
 
-BitPropVariant BitInputArchive::getArchiveProperty( BitProperty property ) const {
-    BitPropVariant propvar;
-    HRESULT res = mInArchive->GetArchiveProperty( static_cast<PROPID>( property ), &propvar );
+BitInputArchive::BitInputArchive(
+    const BitAbstractArchiveHandler& handler,
+    std::istream& inStream,
+    ArchiveStartOffset startOffset
+) : mDetectedFormat{ &handler.format() }, // if auto, detect the format from content, otherwise try the passed format.
+    mArchiveHandler{ handler } {
+    const auto stdStream = bit7z::make_com< CStdInStream, IInStream >( inStream );
+    mInArchive = openArchiveStream( fs::path{}, stdStream, startOffset );
+}
+
+BitInputArchive::BitInputArchive( const BitAbstractArchiveHandler& handler, const BitArchiveItemOffset& nestedItem )
+    : mDetectedFormat{ &handler.format() },
+      mArchiveHandler{ handler },
+      mArchivePath{ nestedItem.path() } {
+    CMyComPtr< IInArchive > arc = mArchiveHandler.library().initInArchive( mArchiveHandler.format() );
+    mInArchive = arc.Detach();
+}
+
+BitInputArchive::BitInputArchive(
+    const BitAbstractArchiveHandler& handler,
+    const BitInputArchive& parentArchive,
+    std::uint32_t subfileIndex,
+    ArchiveStartOffset archiveStart
+) : mDetectedFormat{ &handler.format() },
+    mArchiveHandler{ handler },
+    mArchivePath{ parentArchive.itemAt( subfileIndex ).path() } {
+    const CMyComPtr< IInStream > subStream = parentArchive.getSubfileStream( subfileIndex );
+    mInArchive = openArchiveStream( fs::path{}, subStream, archiveStart );
+}
+
+auto BitInputArchive::archiveProperty( BitProperty property ) const -> BitPropVariant {
+    BitPropVariant archiveProperty;
+    const HRESULT res = mInArchive->GetArchiveProperty( static_cast< PROPID >( property ), &archiveProperty );
     if ( res != S_OK ) {
-        throw BitException( "Could not retrieve archive property", res );
+        throw BitException( "Could not retrieve archive's " + to_string( property ), make_hresult_code( res ) );
     }
-    return propvar;
+    return archiveProperty;
 }
 
-BitPropVariant BitInputArchive::getItemProperty( uint32_t index, BitProperty property ) const {
-    BitPropVariant propvar;
-    HRESULT res = mInArchive->GetProperty( index, static_cast<PROPID>( property ), &propvar );
+auto BitInputArchive::itemProperty( std::uint32_t index, BitProperty property ) const -> BitPropVariant {
+    BitPropVariant itemProperty;
+    const HRESULT res = mInArchive->GetProperty( index, static_cast< PROPID >( property ), &itemProperty );
     if ( res != S_OK ) {
-        throw BitException( L"Could not retrieve property for item at index " + std::to_wstring( index ), res );
+        throw BitException(
+            "Could not retrieve " + to_string( property ) +
+            " of the item at the index " + std::to_string( index ),
+            make_hresult_code( res )
+        );
     }
-    return propvar;
+    if ( property == BitProperty::Path && itemProperty.isEmpty() && itemsCount() == 1 ) {
+        if ( mArchivePath.empty() ) {
+            itemProperty = kEmptyFileWideAlias;
+        } else {
+            auto itemPath = tstringToPath( mArchivePath );
+            if ( *mDetectedFormat != BitFormat::Split && itemPath.extension() == ".001" ) {
+                itemPath = itemPath.stem();
+            }
+            itemProperty = pathToSevenzipString( itemPath.stem() );
+        }
+    }
+    return itemProperty;
 }
 
-uint32_t BitInputArchive::itemsCount() const {
-    uint32_t items_count;
-    HRESULT res = mInArchive->GetNumberOfItems( &items_count );
+auto BitInputArchive::itemHasProperty( std::uint32_t index, BitProperty property ) const -> bool {
+    BitPropVariant itemProperty;
+    return mInArchive->GetProperty( index, static_cast< PROPID >( property ), &itemProperty ) == S_OK;
+}
+
+auto BitInputArchive::itemsCount() const -> std::uint32_t {
+    std::uint32_t itemsCount{};
+    const HRESULT res = mInArchive->GetNumberOfItems( &itemsCount );
     if ( res != S_OK ) {
-        throw BitException( "Could not retrieve the number of items in the archive", res );
+        throw BitException( "Could not retrieve the number of items in the archive", make_hresult_code( res ) );
     }
-    return items_count;
+    return itemsCount;
 }
 
-bool BitInputArchive::isItemFolder( uint32_t index ) const {
-    BitPropVariant prop = getItemProperty( index, BitProperty::IsDir );
-    return !prop.isEmpty() && prop.getBool();
+auto BitInputArchive::isItemFolder( std::uint32_t index ) const -> bool {
+    const BitPropVariant isItemFolder = itemProperty( index, BitProperty::IsDir );
+    return !isItemFolder.isEmpty() && isItemFolder.getBool();
 }
 
-bool BitInputArchive::isItemEncrypted( uint32_t index ) const {
-    BitPropVariant propvar = getItemProperty( index, BitProperty::Encrypted );
-    return propvar.isBool() && propvar.getBool();
+auto BitInputArchive::isItemEncrypted( std::uint32_t index ) const -> bool {
+    const BitPropVariant isItemEncrypted = itemProperty( index, BitProperty::Encrypted );
+    return isItemEncrypted.isBool() && isItemEncrypted.getBool();
 }
 
-HRESULT BitInputArchive::initUpdatableArchive( IOutArchive** newArc ) const {
-    return mInArchive->QueryInterface( ::IID_IOutArchive, reinterpret_cast< void** >( newArc ) );
+auto BitInputArchive::initUpdatableArchive( IOutArchive** newArc ) const -> HRESULT {
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+    return mInArchive->QueryInterface( bit7z::IID_IOutArchive, reinterpret_cast< void** >( newArc ) );
 }
 
-void BitInputArchive::extract( const vector< uint32_t >& indices, ExtractCallback* extract_callback ) const {
-    const uint32_t* item_indices = indices.empty() ? nullptr : indices.data();
-    uint32_t num_items = indices.empty() ? static_cast< uint32_t >( -1 ) : static_cast< uint32_t >( indices.size() );
-
-    HRESULT res = mInArchive->Extract( item_indices, num_items, NExtract::NAskMode::kExtract, extract_callback );
-    if ( res != S_OK ) {
-        throw BitException( extract_callback->getErrorMessage(), res );
-    }
-}
-
-void BitInputArchive::test( ExtractCallback* extract_callback ) const {
-    HRESULT res = mInArchive->Extract( nullptr, static_cast< uint32_t >( -1 ), NExtract::NAskMode::kTest, extract_callback );
-    if ( res != S_OK ) {
-        throw BitException( extract_callback->getErrorMessage(), res );
-    }
-}
-
-HRESULT BitInputArchive::close() const {
-    return mInArchive->Close();
-}
-
-BitInputArchive::~BitInputArchive() {
-    if ( mInArchive ) {
-        mInArchive->Release();
-    }
-}
-
-const BitInFormat& BitInputArchive::detectedFormat() const {
+auto BitInputArchive::detectedFormat() const noexcept -> const BitInFormat& {
 #ifdef BIT7Z_AUTO_FORMAT
     // Defensive programming: for how the archive format is detected,
-    // a correct BitInputArchive instance should have a non null mDetectedFormat!
+    // a correct BitInputArchive instance should have a non-null mDetectedFormat.
     return mDetectedFormat == nullptr ? BitFormat::Auto : *mDetectedFormat;
 #else
     return *mDetectedFormat;
 #endif
 }
+
+auto BitInputArchive::archivePath() const noexcept -> const tstring& {
+    return mArchivePath;
+}
+
+auto BitInputArchive::archiveHasPath() const noexcept -> bool {
+    return !mArchivePath.empty();
+}
+
+namespace {
+BIT7Z_NODISCARD
+auto itemRootFolder( native_string path, const bool isDir ) -> native_string {
+#ifdef _WIN32
+    const auto firstSeparator = path.find_first_of( L"/\\" );
+#else
+    const auto firstSeparator = path.find_first_of( '/' );
+#endif
+    if ( firstSeparator == native_string::npos ) {
+        // The path has no components: if it's a folder itself, it is the root element;
+        // otherwise, it doesn't have a root folder component.
+        if ( isDir ) {
+            return path; // `path` is implicitly moved on return.
+        }
+        return native_string{};
+    }
+
+    if ( firstSeparator == 0 ) {
+        return {}; // The path starts with a separator (should not happen in well-formed archives).
+    }
+
+    return path.substr( 0, firstSeparator );
+}
+} // namespace
+
+auto BitInputArchive::rootFolder() const -> tstring {
+    auto currentItem = cbegin();
+    const auto archiveEnd = cend();
+
+    if ( currentItem == archiveEnd ) {
+        return {}; // Archive is empty (no items).
+    }
+
+    native_string rootFolder;
+    do { // NOLINT(*-avoid-do-while)
+        auto currentRoot = itemRootFolder( currentItem->nativePath(), currentItem->isDir() );
+        if ( currentRoot.empty() ) {
+            return {};
+        }
+
+        if ( rootFolder.empty() ) {
+            rootFolder = std::move( currentRoot );
+        } else if ( rootFolder != currentRoot ) {
+            return {};
+        }
+
+        ++currentItem;
+    } while ( currentItem != archiveEnd );
+
+    // If we exit the loop, it means that all the items have the same root folder;
+    // otherwise, we would have already exited the function.
+    return to_tstring( rootFolder );
+}
+
+auto BitInputArchive::handler() const noexcept -> const BitAbstractArchiveHandler& {
+    return mArchiveHandler;
+}
+
+void BitInputArchive::useFormatProperty( const wchar_t* name, const BitPropVariant& property ) const {
+    CMyComPtr< ISetProperties > setProperties;
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+    HRESULT res = mInArchive->QueryInterface( bit7z::IID_ISetProperties, reinterpret_cast< void** >( &setProperties ) );
+    if ( res != S_OK ) {
+        throw BitException( "ISetProperties unsupported", make_hresult_code( res ) );
+    }
+
+    const auto propertyNames = { name };
+    const auto propertyValues = { property };
+    res = setProperties->SetProperties(
+        propertyNames.begin(),
+        propertyValues.begin(),
+        static_cast< std::uint32_t >( propertyNames.size() )
+    );
+    if ( res != S_OK ) {
+        throw BitException( "Cannot use the archive format property", make_hresult_code( res ) );
+    }
+}
+
+void BitInputArchive::extractTo( const tstring& outDir, BitIndicesView indices ) const {
+    // Find if any index passed by the user is not in the valid range [0, itemsCount() - 1]
+    const auto invalidIndex = findInvalidIndex( indices );
+    if ( invalidIndex != indices.cend() ) {
+        throw BitException(
+            "Cannot extract item at the index " + std::to_string( *invalidIndex ),
+            make_error_code( BitError::InvalidIndex )
+        );
+    }
+
+    const auto callback = bit7z::make_com< FileExtractCallback, ExtractCallback >( *this, outDir );
+    extractArchive( callback, NAskMode::kExtract, indices );
+}
+
+namespace {
+BIT7Z_ALWAYS_INLINE
+auto shouldProcessItem( const BitArchiveItem& item, const tstring& itemFilter, bool extractMatchingItems ) -> bool {
+    /* This condition is true only if the current item either:
+     *  - matches the wildcard pattern, and we must include any matching item; or
+     *  - doesn't match the wildcard pattern, and we must exclude those that match. */
+    return filesystem::fsutil::wildcardMatch( itemFilter, item.path() ) == extractMatchingItems;
+}
+
+#ifdef BIT7Z_REGEX_MATCHING
+BIT7Z_ALWAYS_INLINE
+auto shouldProcessItem( const BitArchiveItem& item, const tregex& itemFilter, bool extractMatchingItems ) -> bool {
+    /* This condition is true only if the current item either:
+     *  - matches the regex pattern, and we must include any matching item; or
+     *  - doesn't match the regex pattern, and we must exclude those that match. */
+    return std::regex_match( item.path(), itemFilter ) == extractMatchingItems;
+}
+#endif
+} // namespace
+
+void BitInputArchive::extractMatchingTo(
+    const tstring& outDir,
+    const tstring& itemFilter,
+    FilterPolicy policy
+) const {
+    if ( itemFilter.empty() ) {
+        throw BitException( "Cannot extract items", make_error_code( BitError::FilterNotSpecified ) );
+    }
+
+    const bool extractMatchingItems = policy == FilterPolicy::Include;
+    extractTo(
+        outDir,
+        [ & ] ( const BitArchiveItem& item ) -> FilterResult {
+            return shouldProcessItem( item, itemFilter, extractMatchingItems )
+                       ? FilterResult::ProcessItem
+                       : FilterResult::SkipItem;
+        }
+    );
+}
+
+#ifdef BIT7Z_REGEX_MATCHING
+
+void BitInputArchive::extractMatchingRegexTo(
+    const tstring& outDir,
+    const tstring& regex,
+    FilterPolicy policy
+) const {
+    if ( regex.empty() ) {
+        throw BitException( "Cannot extract items", make_error_code( BitError::FilterNotSpecified ) );
+    }
+
+    const tregex regexFilter( regex, tregex::ECMAScript | tregex::optimize );
+    extractMatchingTo( outDir, regexFilter, policy );
+}
+
+void BitInputArchive::extractMatchingTo( const tstring& outDir, const tregex& regex, FilterPolicy policy ) const {
+    const bool extractMatchingItems = policy == FilterPolicy::Include;
+    extractTo(
+        outDir,
+        [ &regex, &extractMatchingItems ] ( const BitArchiveItem& item ) -> FilterResult {
+            return shouldProcessItem( item, regex, extractMatchingItems )
+                       ? FilterResult::ProcessItem
+                       : FilterResult::SkipItem;
+        }
+    );
+}
+
+#endif
+
+void BitInputArchive::extractTo( const tstring& outDir, FilterCallback filterCallback ) const {
+    const auto callback = bit7z::make_com< FileExtractCallback, ExtractCallback >(
+        *this,
+        outDir,
+        std::move( filterCallback )
+    );
+    extractArchive( callback, NAskMode::kExtract );
+    if ( !callback->extractionAttempted() ) {
+        throw BitException( "Cannot extract items", make_error_code( BitError::NoMatchingItems ) );
+    }
+}
+
+void BitInputArchive::extractTo( const tstring& outDir, RenameCallback renameCallback ) const {
+    const auto callback = bit7z::make_com< FileExtractCallback, ExtractCallback >(
+        *this,
+        outDir,
+        FilterCallback{},
+        std::move( renameCallback )
+    );
+    extractArchive( callback, NAskMode::kExtract );
+}
+
+void BitInputArchive::extractTo( const tstring& outDir, LegacyRenameCallback renameCallback ) const {
+    // Adapt the deprecated (index, path) callback to the item-based RenameCallback.
+    extractTo( outDir, [ legacyCallback = std::move( renameCallback ) ] ( const BitArchiveItem& item ) -> tstring {
+        return legacyCallback( item.index(), item.path() );
+    } );
+}
+
+namespace {
+constexpr auto nativeDot = BIT7Z_NATIVE_STRING( "." );
+
+BIT7Z_ALWAYS_INLINE
+auto shouldFilterItem( const native_string& path, const BitArchiveItem& item, FolderPathPolicy policy ) -> bool {
+    constexpr auto nativeDotDot = BIT7Z_NATIVE_STRING( ".." );
+    return ( starts_with( path, nativeDotDot ) ||
+             ( ( path.empty() || path == nativeDot ) && ( policy == FolderPathPolicy::Strip || !item.isDir() ) ) );
+}
+
+// Computes the destination path (relative to the output directory) for an item being extracted
+// from the folder at folderFsPath, or an empty path if the item must be skipped.
+// The FolderPathPolicy shapes the prefix (the selected folder's own path); when directories must
+// not be retained, the remainder (the part below the folder) is flattened to its filename.
+auto folderItemDestination(
+    const BitArchiveItem& item,
+    const fs::path& folderFsPath,
+    const fs::path& folderName,
+    FolderPathPolicy policy,
+    bool retainDirs
+) -> fs::path {
+    fs::path itemPath{ item.nativePath() };
+    const fs::path relativePath = itemPath.lexically_relative( folderFsPath );
+    if ( shouldFilterItem( relativePath.native(), item, policy ) ) {
+        return {}; // Skipping the item.
+    }
+
+    const bool flattenRemainder = !retainDirs && relativePath.native() != nativeDot;
+    fs::path remainder = flattenRemainder ? relativePath.filename() : relativePath;
+    switch ( policy ) {
+        case FolderPathPolicy::KeepPath:
+            if ( flattenRemainder ) {
+                return folderFsPath / remainder;
+            }
+            return itemPath; // Separate return (not a ternary) to allow moving itemPath.
+        case FolderPathPolicy::KeepName:
+            return relativePath.native() == nativeDot ? folderName : folderName / remainder;
+        case FolderPathPolicy::Strip:
+        default:
+            return remainder;
+    }
+}
+} // namespace
+
+void BitInputArchive::extractFolderTo(
+    const tstring& outDir,
+    const tstring& folderPath,
+    FolderPathPolicy policy
+) const {
+    if ( folderPath.empty() || filesystem::fsutil::containsDotReferences( folderPath ) ) {
+        throw BitException(
+            "Invalid folder path to be extracted from the archive",
+            std::make_error_code( std::errc::invalid_argument )
+        );
+    }
+
+    if ( isPathSeparator( folderPath.front() ) ) {
+        throw BitException(
+            "The folder path must be relative",
+            std::make_error_code( std::errc::invalid_argument )
+        );
+    }
+
+    const auto folderFsPath = tstringToPath( folderPath );
+    const auto folderName = isPathSeparator( folderPath.back() )
+                                ? folderFsPath.parent_path().filename()
+                                : folderFsPath.filename();
+    const bool retainDirs = handler().retainDirectories();
+
+    std::uint32_t matchingCount = 0;
+    auto renameCallback =
+        [ &folderFsPath, &folderName, &policy, &retainDirs, &matchingCount ] ( const BitArchiveItem& item ) -> tstring {
+        const auto destination = folderItemDestination( item, folderFsPath, folderName, policy, retainDirs );
+        if ( destination.empty() ) {
+            return {}; // Skipping the item.
+        }
+        ++matchingCount;
+        return pathToTstring( destination );
+    };
+    const auto callback = bit7z::make_com< FileExtractCallback, ExtractCallback >(
+        *this,
+        outDir,
+        FilterCallback{},
+        std::move( renameCallback )
+    );
+    extractArchive( callback, NAskMode::kExtract );
+    if ( matchingCount == 0 ) {
+        throw BitException(
+            "No item inside the given folder path within the archive",
+            std::make_error_code( std::errc::invalid_argument )
+        );
+    }
+}
+
+void BitInputArchive::extractRootFolderContentTo( const tstring& outDir ) const {
+    const auto folderPath = rootFolder();
+    if ( folderPath.empty() ) {
+        throw BitException(
+            "The archive does not have a single root folder",
+            make_error_code( BitError::NoMatchingItems )
+        );
+    }
+
+    // Note: if we are here, it means that all the items in the archive have the same root folder prefix.
+    // So we can simply strip it from the path to obtain the path of the item within the root folder.
+    const auto stripDirs = !handler().retainDirectories();
+    const auto rootPrefixLength = folderPath.length();
+    auto renameCallback = [ stripDirs, rootPrefixLength ]( const BitArchiveItem& item ) -> tstring {
+        auto originalItemPath = item.path();
+        if ( originalItemPath.length() <= rootPrefixLength ) {
+            // Should not happen, but better be safe.
+            return {};
+        }
+
+        // The returned string starts just after the root prefix and any separators following it.
+        auto startPos = originalItemPath.find_first_not_of( kSeparators, rootPrefixLength );
+        if ( startPos == tstring::npos ) {
+            // No non-separator character after the root prefix (should not happen).
+            return {};
+        }
+
+        if ( stripDirs ) {
+            // Flatten: the basename begins right after the last separator.
+            const auto lastSeparator = originalItemPath.find_last_of( kSeparators );
+            if ( lastSeparator != tstring::npos ) {
+                startPos = lastSeparator + 1;
+            }
+        }
+        originalItemPath.erase( 0, startPos );
+        return originalItemPath;
+    };
+    extractTo( outDir, std::move( renameCallback ) );
+}
+
+void BitInputArchive::extractTo( buffer_t& outBuffer, std::uint32_t index ) const {
+    if ( isInvalidIndex( index ) ) {
+        throw BitException(
+            "Cannot extract item at the index " + std::to_string( index ),
+            make_error_code( BitError::InvalidIndex )
+        );
+    }
+
+    if ( isItemFolder( index ) ) { // Consider only files, not folders
+        throw BitException(
+            "Cannot extract item at the index " + std::to_string( index ) + " to the buffer",
+            make_error_code( BitError::ItemIsAFolder )
+        );
+    }
+
+    auto bufferCallback = [ &outBuffer ] ( std::uint32_t, const tstring& ) -> buffer_t& {
+        return outBuffer;
+    };
+    const auto extractCallback = bit7z::make_com< BufferExtractCallback, ExtractCallback >(
+        *this,
+        std::move( bufferCallback )
+    );
+    try {
+        extractArchive( extractCallback, NAskMode::kExtract, index );
+    } catch ( const BitException& ) {
+        outBuffer.clear();
+        throw;
+    }
+}
+
+void BitInputArchive::extractMatchingTo( buffer_t& outBuffer, const tstring& itemFilter, FilterPolicy policy ) const {
+    if ( itemFilter.empty() ) {
+        throw BitException( "Cannot extract items", make_error_code( BitError::FilterNotSpecified ) );
+    }
+
+    const bool extractMatchingItems = policy == FilterPolicy::Include;
+    extractTo(
+        outBuffer,
+        [ & ] ( const BitArchiveItem& item ) -> FilterResult {
+            return shouldProcessItem( item, itemFilter, extractMatchingItems )
+                       ? FilterResult::ProcessItem
+                       : FilterResult::SkipItem;
+        }
+    );
+}
+
+#ifdef BIT7Z_REGEX_MATCHING
+
+void BitInputArchive::extractMatchingRegexTo( buffer_t& outBuffer, const tstring& regex, FilterPolicy policy ) const {
+    if ( regex.empty() ) {
+        throw BitException( "Cannot extract items", make_error_code( BitError::FilterNotSpecified ) );
+    }
+
+    const tregex regexFilter( regex, tregex::ECMAScript | tregex::optimize );
+    extractMatchingTo( outBuffer, regexFilter, policy );
+}
+
+void BitInputArchive::extractMatchingTo( buffer_t& outBuffer, const tregex& regex, FilterPolicy policy ) const {
+    const bool extractMatchingItems = policy == FilterPolicy::Include;
+    extractTo(
+        outBuffer,
+        [ &regex, &extractMatchingItems ] ( const BitArchiveItem& item ) -> FilterResult {
+            return shouldProcessItem( item, regex, extractMatchingItems )
+                       ? FilterResult::ProcessItem
+                       : FilterResult::SkipItem;
+        }
+    );
+}
+
+#endif
+
+void BitInputArchive::extractTo( buffer_t& outBuffer, FilterCallback filterCallback ) const {
+    auto bufferCallback = [ &outBuffer ] ( std::uint32_t, const tstring& ) -> buffer_t& {
+        return outBuffer;
+    };
+    const auto callback = bit7z::make_com< BufferExtractCallback, ExtractCallback >(
+        *this,
+        std::move( bufferCallback ),
+        std::move( filterCallback )
+    );
+    extractArchive( callback, NAskMode::kExtract );
+    if ( !callback->extractionAttempted() ) {
+        throw BitException( "Cannot extract items", make_error_code( BitError::NoMatchingFile ) );
+    }
+}
+
+void BitInputArchive::extractTo( std::ostream& outStream, std::uint32_t index ) const {
+    if ( isInvalidIndex( index ) ) {
+        throw BitException(
+            "Cannot extract item at the index " + std::to_string( index ),
+            make_error_code( BitError::InvalidIndex )
+        );
+    }
+
+    if ( isItemFolder( index ) ) { // Consider only files, not folders
+        throw BitException(
+            "Cannot extract item at the index " + std::to_string( index ) + " to the buffer",
+            make_error_code( BitError::ItemIsAFolder )
+        );
+    }
+
+    const auto extractCallback = bit7z::make_com< StreamExtractCallback, ExtractCallback >( *this, outStream );
+    extractArchive( extractCallback, NAskMode::kExtract, index );
+}
+
+void BitInputArchive::extractTo( byte_t* outBuffer, std::size_t size, std::uint32_t index ) const {
+    if ( outBuffer == nullptr ) {
+        throw BitException(
+            "Cannot extract the item at the index " + std::to_string( index ) + " to the buffer",
+            make_error_code( BitError::NullOutputBuffer )
+        );
+    }
+
+    if ( isInvalidIndex( index ) ) {
+        throw BitException(
+            "Cannot extract the item at the index " + std::to_string( index ) + " to the buffer",
+            make_error_code( BitError::InvalidIndex )
+        );
+    }
+
+    if ( isItemFolder( index ) ) { // Consider only files, not folders
+        throw BitException(
+            "Cannot extract the item at the index " + std::to_string( index ) + " to the buffer",
+            make_error_code( BitError::ItemIsAFolder )
+        );
+    }
+
+    const auto itemSize = itemProperty( index, BitProperty::Size ).getUInt64();
+    if ( size != itemSize ) {
+        throw BitException(
+            "Cannot extract archive to pre-allocated buffer",
+            make_error_code( BitError::InvalidOutputBufferSize )
+        );
+    }
+
+    const auto extractCallback = bit7z::make_com< FixedBufferExtractCallback, ExtractCallback >(
+        *this,
+        outBuffer,
+        size
+    );
+    extractArchive( extractCallback, NAskMode::kExtract, index );
+}
+
+void BitInputArchive::extractTo( std::map< tstring, buffer_t >& outMap ) const {
+    const std::uint32_t numberItems = itemsCount();
+    IndicesVector filesIndices;
+    for ( std::uint32_t i = 0; i < numberItems; ++i ) {
+        if ( !isItemFolder( i ) ) { // Consider only files, not folders
+            filesIndices.push_back( i );
+        }
+    }
+
+    auto bufferCallback = [ &outMap ] ( std::uint32_t, const tstring& path ) -> buffer_t& {
+        // Note: the [] operator creates the buffer if it does not already exist.
+        return outMap[ path ];
+    };
+    extractTo( std::move( bufferCallback ), filesIndices );
+}
+
+void BitInputArchive::extractTo( BufferCallback callback, BitIndicesView indices ) const {
+    const auto extractCallback = bit7z::make_com< BufferExtractCallback, ExtractCallback >(
+        *this,
+        std::move( callback )
+    );
+    extractArchive( extractCallback, NAskMode::kExtract, indices );
+}
+
+void BitInputArchive::extractTo( RawDataCallback callback, BitIndicesView indices ) const {
+    // Find if any index passed by the user is not in the valid range [0, itemsCount() - 1]
+    const auto invalidIndex = findInvalidIndex( indices );
+    if ( invalidIndex != indices.cend() ) {
+        throw BitException(
+            "Cannot extract item at the index " + std::to_string( *invalidIndex ),
+            make_error_code( BitError::InvalidIndex )
+        );
+    }
+
+    const auto extractCallback = bit7z::make_com< RawDataExtractCallback, ExtractCallback >(
+        *this,
+        std::move( callback )
+    );
+    extractArchive( extractCallback, NAskMode::kExtract, indices );
+}
+
+void BitInputArchive::test( BitIndicesView indices ) const {
+    // Find if any index passed by the user is not in the valid range [0, itemsCount() - 1]
+    const auto invalidIndex = findInvalidIndex( indices );
+    if ( invalidIndex != indices.cend() ) {
+        throw BitException(
+            "Cannot extract item at the index " + std::to_string( *invalidIndex ),
+            make_error_code( BitError::InvalidIndex )
+        );
+    }
+
+    testArchive( indices );
+}
+
+void BitInputArchive::testItem( std::uint32_t index ) const {
+    test( index );
+}
+
+void BitInputArchive::testArchive( BitIndicesView indices ) const {
+    byte_t dummyBuffer{};
+    const auto extractCallback = bit7z::make_com< FixedBufferExtractCallback, ExtractCallback >(
+        *this,
+        &dummyBuffer,
+        1u
+    );
+    extractArchive( extractCallback, NAskMode::kTest, indices );
+}
+
+auto BitInputArchive::close() const noexcept -> HRESULT {
+    return mInArchive->Close();
+}
+
+BitInputArchive::~BitInputArchive() {
+    if ( mInArchive != nullptr ) {
+        mInArchive->Close();
+        mInArchive->Release();
+    }
+}
+
+auto BitInputArchive::begin() const noexcept -> BitInputArchive::ConstIterator {
+    return ConstIterator{ 0, *this };
+}
+
+auto BitInputArchive::end() const noexcept -> BitInputArchive::ConstIterator try {
+    return ConstIterator{ itemsCount(), *this }; //-V509
+} catch ( const BitException& ) {
+    return begin();
+}
+
+auto BitInputArchive::cbegin() const noexcept -> BitInputArchive::ConstIterator {
+    return begin();
+}
+
+auto BitInputArchive::cend() const noexcept -> BitInputArchive::ConstIterator {
+    return end();
+}
+
+auto BitInputArchive::find( const tstring& path ) const noexcept -> BitInputArchive::ConstIterator {
+    /* Windows supports both '/' and '\' characters as path separators,
+     * but 7-Zip reports item paths with the \ path separator.
+     * To support both path separators in the user-supplied path,
+     * we use the fs::path's element-wise path equality operator.
+     *
+     * Other operating systems usually only support the '/' path separator,
+     * and 7-Zip uses this in the item paths, so we only need to compare the path strings. */
+#ifdef _WIN32
+    const auto pathToFind = tstringToPath( path );
+    return std::find_if(
+        begin(),
+        end(),
+        [ &pathToFind ] ( const BitArchiveItemOffset& oldItem ) -> bool {
+            return oldItem.nativePath() == pathToFind;
+        }
+    );
+#else
+    return std::find_if(
+        begin(),
+        end(),
+        [ &path ] ( const BitArchiveItemOffset& oldItem ) -> bool {
+            return oldItem.path() == path;
+        }
+    );
+#endif
+}
+
+auto BitInputArchive::findByName( const tstring& name ) const noexcept -> BitInputArchive::ConstIterator {
+    // Note: when tstring is the same type as native_string (BIT7Z_USE_NATIVE_STRING is ON, or we are on a POSIX system)
+    // we just take a reference to the name string; in other cases, we get a new string, and the reference variable
+    // extends its lifetime.
+    const auto& nameToFind = to_native_string( name );
+    return std::find_if(
+        begin(),
+        end(),
+        [ &nameToFind ] ( const BitArchiveItemOffset& oldItem ) -> bool {
+            return oldItem.nativeName() == nameToFind;
+        }
+    );
+}
+
+auto BitInputArchive::contains( const tstring& path ) const noexcept -> bool {
+    return find( path ) != end();
+}
+
+auto BitInputArchive::itemAt( std::uint32_t index ) const -> BitArchiveItemOffset {
+    if ( isInvalidIndex( index ) ) {
+        throw BitException(
+            "Cannot get the item at the index " + std::to_string( index ),
+            make_error_code( BitError::InvalidIndex )
+        );
+    }
+    return { *this, index };
+}
+
+auto BitInputArchive::itemAtUnchecked( std::uint32_t index ) const -> BitArchiveItemOffset {
+    return { *this, index };
+}
+
+auto BitInputArchive::mainSubfileIndex() const -> std::uint32_t {
+    const BitPropVariant prop = archiveProperty( BitProperty::MainSubfile );
+    if ( !prop.isUInt32() ) {
+        throw BitException{ "Could not retrieve the index of the main subfile", make_hresult_code( E_FAIL ) };
+    }
+
+    const std::uint32_t mainSubfileIndex = prop.getUInt32();
+    if ( mainSubfileIndex >= itemsCount() ) {
+        throw BitException{
+            "Could not retrieve the index of the main subfile",
+            make_error_code( BitError::InvalidIndex )
+        };
+    }
+    return mainSubfileIndex;
+}
+
+auto BitInputArchive::findInvalidIndex( BitIndicesView indices ) const -> BitIndicesView::const_iterator {
+    if ( indices.data() == nullptr ) {
+        return indices.cend();
+    }
+
+    const auto count = itemsCount();
+    return std::find_if(
+        indices.cbegin(),
+        indices.cend(),
+        [ &count ] ( std::uint32_t index ) noexcept -> bool {
+            return index >= count;
+        }
+    );
+}
+
+auto BitInputArchive::isInvalidIndex( std::uint32_t index ) const -> bool {
+    return index >= itemsCount();
+}
+
+void BitInputArchive::openArchiveSeqStream( ISequentialInStream* inStream ) const {
+    // Trying to open the archive as a sequential stream.
+    CMyComPtr< IArchiveOpenSeq > inSeqArchive{};
+
+    // NOLINTNEXTLINE(*-pro-type-reinterpret-cast)
+    HRESULT res = mInArchive->QueryInterface( IID_IArchiveOpenSeq, reinterpret_cast< void** >( &inSeqArchive ) );
+    if ( res != S_OK ) { // TODO: Improve error message when format doesn't support sequentially opening of archives.
+        throw BitException( "Could not open the archive sequentially", make_hresult_code( res ) );
+    }
+
+    res = inSeqArchive->OpenSeq( inStream );
+    if ( res != S_OK ) {
+        throw BitException( "Could not open the archive sequentially", make_hresult_code( res ) );
+    }
+}
+
+void BitInputArchive::extractSequentially( BufferQueue& queue, std::uint32_t index ) const {
+    const auto extractCallback = bit7z::make_com< SequentialExtractCallback, ExtractCallback >( *this, queue );
+    extractArchive( extractCallback, NAskMode::kExtract, index );
+}
+
+void BitInputArchive::extractArchive( ExtractCallback* callback, std::int32_t mode, BitIndicesView indices ) const {
+    const auto numItems = indices.empty() ? std::numeric_limits< std::uint32_t >::max() : indices.size();
+    const HRESULT res = mInArchive->Extract( indices.data(), numItems, mode, callback );
+    if ( res == S_OK ) {
+        return;
+    }
+
+    const auto& errorException = callback->errorException();
+    if ( !errorException ) {
+        throw BitException(
+            mode == NAskMode::kTest ? "Could not test the archive" : "Could not extract the archive",
+            make_hresult_code( res )
+        );
+    }
+    std::rethrow_exception( errorException );
+}
+
+auto BitInputArchive::getSubfileStream( std::uint32_t index ) const -> CMyComPtr< IInStream > {
+    CMyComPtr< IInArchiveGetStream > getStream;
+
+    // NOLINTNEXTLINE(*-pro-type-reinterpret-cast)
+    HRESULT res = mInArchive->QueryInterface( IID_IInArchiveGetStream, reinterpret_cast< void** >( &getStream ) );
+    if ( res != S_OK ) {
+        throw BitException{ "The archive format doesn't support subfile streams", make_hresult_code( res ) };
+    }
+
+    CMyComPtr< ISequentialInStream > subSequentialInStream;
+    res = getStream->GetStream( index, &subSequentialInStream );
+    if ( res != S_OK ) {
+        throw BitException{ "Could not get the subfile sequential stream", make_hresult_code( res ) };
+    }
+
+    CMyComPtr< IInStream > subInStream;
+    res = subSequentialInStream.QueryInterface( IID_IInStream, &subInStream );
+    if ( res != S_OK ) {
+        throw BitException{ "Could not get the subfile stream", make_hresult_code( res ) };
+    }
+    return subInStream;
+}
+
+auto BitInputArchive::ConstIterator::operator++() noexcept -> BitInputArchive::ConstIterator& {
+    ++mItemOffset;
+    return *this;
+}
+
+// NOLINTNEXTLINE(cert-dcl21-cpp)
+auto BitInputArchive::ConstIterator::operator++( int ) noexcept -> BitInputArchive::ConstIterator {
+    ConstIterator incremented = *this;
+    ++( *this );
+    return incremented;
+}
+
+auto BitInputArchive::ConstIterator::operator==( const BitInputArchive::ConstIterator& other ) const noexcept -> bool {
+    return mItemOffset == other.mItemOffset;
+}
+
+auto BitInputArchive::ConstIterator::operator!=( const BitInputArchive::ConstIterator& other ) const noexcept -> bool {
+    return !( *this == other );
+}
+
+auto BitInputArchive::ConstIterator::operator*() const noexcept -> BitInputArchive::ConstIterator::reference {
+    return mItemOffset;
+}
+
+auto BitInputArchive::ConstIterator::operator->() const noexcept -> BitInputArchive::ConstIterator::pointer {
+    return &mItemOffset;
+}
+
+BitInputArchive::ConstIterator::ConstIterator( std::uint32_t itemIndex, const BitInputArchive& itemArchive ) noexcept
+    : mItemOffset( itemArchive, itemIndex ) {}
+
+} // namespace bit7z

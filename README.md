@@ -1,233 +1,440 @@
-<h1 align="center">
-bit7z
-</h1>
+<h1 align="center">bit7z</h1>
 
-<h3 align="center">A C++ static library offering a clean and simple interface to the 7-zip DLLs</h3>
+<h3 align="center">A C++ static library offering a clean and simple interface to the 7-Zip shared libraries.</h3>
+
+<!-- navbar -->
 
 <p align="center">
-  <a href="https://github.com/rikyoz/bit7z/releases"><img src="https://img.shields.io/github/release/rikyoz/bit7z/all.svg?style=flat-square&logo=github&logoColor=white&colorB=blue&label=" alt="GitHub release"></a>
-  <img src="https://img.shields.io/badge/-MSVC%202012+-red.svg?style=flat-square&logo=visual-studio-code&logoColor=white" alt="MSVC 2012 - 2019">
-  <img src="https://img.shields.io/badge/-x86,%20x86__64-orange.svg?style=flat-square&logo=data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAQAAAAAYLlVAAAC1UlEQVR42u3WA9AjWRSA0bu2bdu2bdssrm3btm3btm3bmX+Ms7rLTiW9NUmvcsL7XuELu6Ojoz5DWcc5nvKp2kBdPvesi21m1Pgr7OxjrfWtgw0VZZjKM9rjXfNHM+bWWzutGo2YSH/tNm+jgNe1XzdDR322V41Tox5D6K4qY0WRtVRnjyhysercH0VeVJ13o8hXqvNNFOlSna4oUlOd2r8moBPwoQfd6THfoLweauqp6aJ8wInmMmjujWAFtwMeNJup5cXsVnWYDyDtajQjmMp7QOoypxGMbMtyAe+Ztf5/JTaJAkM6mjRXrj0KpE9zdZIyAV8bLX5lBIPlszXAVlGXMwAr5fwskL4wdPzAfGUC5o9kJy+o+dCVloiwJNg2907wimddZrqcB9GtNQF3RXI+kI5yCcgADwF6yvfLNa0JWD7n5dWXAa4lbZwrR7UioKdhc76vdEB+KxzbioAncxpGr9IBM+XKDa0IuCanaWkS8BzguEhqrQg4P6e5mgasbV+7WCySvWlFwIU5zdYooMhytCbghpzGLh9gAodCWjFXXwDSV4aJH5inWcBLkbzTOMBa9rWvk92jH5BWqBvwjSHKBfQ3as4HlvoSFq2b+zcB6bXIj6pZABvnPKzPgPSJlxV/hkUH5v7SUPiv2LN5wKuRjO82wDdON6xFSwW8XvhdcGYkrzUPYJf4lcktZh4jxg8sViqA9SKZxDo2NH0km1ImgE2jDjuBLXK6FPX1N1fUYQnKBnCeGeN3jGdPfUC+P27TyO7GjN8xoUMpHZCecKZ97etE9+hD6vKQOz1jgMa6u90J+VO9V//OaXnzgE5Al+p0iyLfqM63UeRV1Xk/ilylOo9Gkc1U55AoMrz+qjJJ1OMQ1bgq6jOYr1Rh9EgFZtd+q0QjVtFeW0UzFvGJ9uhhrSjDSE7UX6tdaMIoz0R2cbvXfKE2UJevvOEe+5kuOjr+qb4H0/HV/SQ0YjEAAAAASUVORK5CYII=" alt="x86, x86_64">
-  <a href="https://github.com/rikyoz/bit7z/wiki"><img src="https://img.shields.io/badge/-docs-yellow.svg?style=flat-square&logo=data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAQAAAAAYLlVAAABCklEQVR42u3OAUQEARCF4SkKTgASgCIhCBRAQXHVSeEEgY6gAIggQiIACAISyAEkqigRiAKQAItEOlj1B1HU7nB2VvS+B4D3W/sYZZNzHnmlxQMHzNJhZWGCS346pdfi0c0u7/zulkr8fZM8WxaLffI902VxqOIbszhc41u0KAwAvoZFoQb4qhaFBr6UPotCHd+RxWEYzwv9Fok78qTMWyymeCNLizmLx2pGwhWDVg7GueG7lBOm6bQyMcQS62ywwiQ9JiJ/ARVGqLPDBctWLPY4zFyTY86454kva1YsEnwoIDJghoXPbUcHOKj9zwAFKEABClCAAhSgAAUoQAEKUIACSGhXYgpQgOsD2giqlbnGmc4AAAAASUVORK5CYII=" alt="Docs"></a>
-  <a href="#donations"><img src="https://img.shields.io/badge/-donations-green.svg?style=flat-square&logo=data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABBCAMAAABW61JJAAAAM1BMVEUAAAD///////////////////////////////////////////////////////////////+3leKCAAAAEHRSTlMAv0CA7xBgrzDfn3BQIM+PWN4WLwAAAfhJREFUeF69llmS3CAQRLMWNi0t7n9ax/RI7lCOQMh2+H0DovQqo8A/RpNcksw0455Yu8i8ostabxFFB6sDSOcWqY7gC1p4HSPimlxHyU8dMAWXTJV4WkSpf3eFUIkib7xekC96aqE1M3ayeWXmxSOIjfd/CFMlNjjbhFCV3R4TJLaJemLqx0RgbFOpgr4igfKiud9scnVAaVfpuD2AP+O0gHjxL1JSRX/JbrrMoPSrKUl6EzRFpItSkm4qqICdDuAVLwAdRTXtWqRV48YFELpvkFaSllNMt4s0R5JlzRuEWCqjR3JSq0/2rKqa1J8kQNl2fcArAEK2tY7j+WMlkKbR/dl3m5SkEUoGQmFZ8DqIBCAcwSqUpHt8BpALBWZ8Jk0BwOIfm49mkk8rgJDqQQmUpC4pvpebn2xQkhq4mH4vs3K2yUn68JI3ZrZoOCKR2CZaSXLFmXUxYZvgmUSXy/rFbGYilzb7MynInc3eTIpdK76tIDhJa7uvPMX71503+qok06HXXQLKyeZkZqrjD9z56Kui6NGZScths0tnJm00GvqwMwFktzkGJ8mAw2af9kxSfmT14SQF2G5zFOGxnHabf3aAHX2VMcpGScy7zWGCycE7KkZz+yE8dsdZ9YtlopkxzsY2n8KPrMc42XzMRIl6TJjkNxH/kV+EeH5bYbU1DgAAAABJRU5ErkJggg==&logoColor=white" alt="Donations"></a>
-  <a href="https://ci.appveyor.com/project/rikyoz/bit7z"><img src="https://img.shields.io/appveyor/ci/rikyoz/bit7z.svg?style=flat-square&logo=appveyor&logoColor=white&label=" alt="Build status"></a>
-  <a href="https://github.com/rikyoz/bit7z/blob/master/LICENSE"><img src="https://img.shields.io/badge/-GPL%20v2-lightgrey.svg?style=flat-square&logo=data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAQAAAAAYLlVAAAAvUlEQVR42u3Zt1EEURRE0Ye0gFwI4BWJoC0KGxftExk+RQATAN+nLpo1R0+v6NsJHPOLcO4vKkrPVexEcMFZN8AQ7UXwCBx0ART6VtiN4BCA1AHO+SnVAEg1AFINgFQDINUASDUAUg2AVAMg1QBINQBSDYBUAyDVAMhxAVfUdzkmYJ+7mj1xPQ7gjbWYJTmQbGsB77zy0mjPPQH9UwOKAQYYYIABBhhggAFzCTDAAAMMMGDS+v2a9V8Vzs1PH+dRolvEzoAoAAAAAElFTkSuQmCC" alt="License"></a>
-</p>
-<p align="center">
-  <a href="#supported-features">Supported Features</a> •
-  <a href="#getting-started-library-usage">Getting Started</a> •
-  <a href="#download">Download</a> •
-  <a href="#requirements">Requirements</a> •
-  <a href="#building-bit7z">Building</a> •
-  <a href="#donations">Donations</a> •
-  <a href="#license-gpl-v2">License</a>
+  <a href="#-supported-features" title="List of Features Supported by the Library">Supported Features</a> •
+  <a href="#-getting-started-library-usage" title="Basic Source Code Examples">Getting Started</a> •
+  <a href="#-download" title="Download Pre-compiled Packages">Download</a> •
+  <a href="#-requirements" title="Usage Requirements">Requirements</a> •
+  <a href="#-installation" title="Installation">Installation</a> •
+  <a href="#%EF%B8%8F-configuration" title="Configuration">Configuration</a> •
+  <a href="#-donate" title="Support the Project">Donate</a> •
+  <a href="#-license" title="Project License">License</a>
 </p>
 
-## Introduction
+<!-- navbar -->
 
-**bit7z** is a C++ static library which allows to compress and extract many file archive formats,  all through a clean, simple and entirely object-oriented interface to the dynamic libraries from the 7-zip project (<https://www.7-zip.org/>).<br/>It supports compression and extraction to and from the filesystem or the memory, reading of archives metadata, updating existing archives, creation of multi-volume archives, operation progress callbacks and many other functionalities.
+<div align="center">
+  <a href="https://github.com/rikyoz/bit7z/releases" title="Latest Stable GitHub Release"><img src="https://img.shields.io/github/release/rikyoz/bit7z/all.svg?style=flat&logo=github&logoColor=white&colorB=blue&label=" alt="GitHub release"></a>&thinsp;<img src="https://img.shields.io/badge/-C++14-3F63B3.svg?style=flat&logo=C%2B%2B&logoColor=white" alt="C++14" title="C++ Standards Used: C++14">&thinsp;<img src="https://img.shields.io/badge/-Windows-6E46A2.svg?style=flat&logo=data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA0ODc1IDQ4NzUiPjxwYXRoIGZpbGw9IiNmZmYiIGQ9Ik0wIDBoMjMxMXYyMzEwSDB6bTI1NjQgMGgyMzExdjIzMTBIMjU2NHpNMCAyNTY0aDIzMTF2MjMxMUgwem0yNTY0IDBoMjMxMXYyMzExSDI1NjQiLz48L3N2Zz4=&logoColor=white" alt="Windows" title="Supported Platform: Windows">&thinsp;<img src="https://img.shields.io/badge/-Linux-ad3a90.svg?style=flat&logo=linux&logoColor=white" alt="Linux" title="Supported Platform: Linux">&thinsp;<img src="https://img.shields.io/badge/-macOS-d43d6c.svg?style=flat&logo=apple&logoColor=white" alt="macOS" title="Supported Platform: macOS">&thinsp;<img src="https://img.shields.io/badge/-BSD-red.svg?style=flat&logo=freebsd&logoColor=white" alt="BSD" title="Supported Platform: BSD">&thinsp;<img src="https://img.shields.io/badge/-x86%20&middot;%20x64%20&middot;%20arm%20&middot;%20arm64-orange.svg?style=flat&logo=data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHhtbDpzcGFjZT0icHJlc2VydmUiIHZpZXdCb3g9IjAgMCA5NDIgOTQyIj48cGF0aCBmaWxsPSIjZmZmIiBkPSJNNTc5LjEgODk0YTQ4IDQ4IDAgMCAwIDk2IDB2LTc3LjVoLTk1LjlWODk0aC0uMXpNNTc5LjEgNDh2NzcuNUg2NzVWNDhhNDggNDggMCAwIDAtOTUuOSAwek00MjMgNDh2NzcuNWg5NlY0OGE0OCA0OCAwIDAgMC05NiAwek00MjMgODk0YTQ4IDQ4IDAgMCAwIDk2IDB2LTc3LjVoLTk2Vjg5NHpNMjY3IDQ4djc3LjVoOTUuOVY0OGE0OCA0OCAwIDAgMC05NS45IDB6TTI2NyA4OTRhNDggNDggMCAwIDAgOTYgMHYtNzcuNWgtOTZWODk0ek0wIDYyN2E0OCA0OCAwIDAgMCA0OCA0OGg3Ny41di05NS45SDQ4QTQ4IDQ4IDAgMCAwIDAgNjI3ek04OTQgNTc5LjFoLTc3LjVWNjc1SDg5NGE0OCA0OCAwIDAgMCAwLTk1Ljl6TTAgNDcxYTQ4IDQ4IDAgMCAwIDQ4IDQ4aDc3LjV2LTk2SDQ4YTQ4IDQ4IDAgMCAwLTQ4IDQ4ek04OTQgNDIzaC03Ny41djk2SDg5NGE0OCA0OCAwIDAgMCAwLTk2ek0wIDMxNWE0OCA0OCAwIDAgMCA0OCA0OGg3Ny41di05Nkg0OGE0OCA0OCAwIDAgMC00OCA0OHpNODk0IDI2N2gtNzcuNXY5NS45SDg5NGE0OCA0OCAwIDAgMCAwLTk1Ljl6TTE3MS42IDcyMC40YTUwIDUwIDAgMCAwIDUwIDUwaDQ5OC44YTUwIDUwIDAgMCAwIDUwLTUwVjIyMS42YTUwIDUwIDAgMCAwLTUwLTUwSDIyMS42YTUwIDUwIDAgMCAwLTUwIDUwdjQ5OC44eiIvPjwvc3ZnPg==" alt="x86, x64, arm, arm64" title="Supported CPU Architectures: x86, x64, arm, arm64">&thinsp;<a href="#%EF%B8%8F-donate" title="Donate"><img src="https://img.shields.io/badge/-donate-yellow.svg?style=flat&logo=paypal&logoColor=white" alt="donate"></a>&thinsp;<a href="https://github.com/rikyoz/bit7z/wiki" title="Project Documentation"><img src="https://img.shields.io/badge/-docs-green.svg?style=flat&logo=data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIGRhdGEtbmFtZT0iTGF5ZXIgMSIgdmlld0JveD0iMCAwIDEwNS4zIDEyMi45Ij48cGF0aCBmaWxsLXJ1bGU9ImV2ZW5vZGQiIGZpbGw9IiNmZmYiIGQ9Ik0xNy41IDBIMTAydjk0LjJjLS4xIDIuNy0zLjUgMi43LTcuMiAyLjZIMTYuM2E5LjIgOS4yIDAgMCAwIDAgMTguNEg5OHYtOS44aDcuMlYxMThhNC4yIDQuMiAwIDAgMS00LjEgNC4xSDE2LjZDNy41IDEyNS41IDAgMTE4IDAgMTA4LjhWMTcuNUExNy42IDE3LjYgMCAwIDEgMTcuNSAwWm0tMS4zIDEwOGg3NS4yYTEuNCAxLjQgMCAwIDEgMS40IDEuM3YuOGExLjQgMS40IDAgMCAxLTEuNCAxLjRIMTYuMmExLjQgMS40IDAgMCAxLTEuMy0xLjR2LS44YTEuNCAxLjQgMCAwIDEgMS4zLTEuNFptMC03LjJoNzUuMmExLjQgMS40IDAgMCAxIDEuNCAxLjR2LjhhMS40IDEuNCAwIDAgMS0xLjQgMS40SDE2LjJBMS40IDEuNCAwIDAgMSAxNSAxMDN2LS44YTEuNCAxLjQgMCAwIDEgMS4zLTEuNFoiLz48L3N2Zz4=" alt="docs"></a>&thinsp;<a href="https://ci.appveyor.com/project/rikyoz/bit7z" title="AppVeyor CI Build Status"><img src="https://img.shields.io/appveyor/ci/rikyoz/bit7z.svg?style=flat&logo=appveyor&logoColor=white&label=" alt="Build status"></a>
+  <br>
+  <img src="https://img.shields.io/badge/MSVC%202015+-flag.svg?color=555555&style=flat&logo=data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCI+PHBhdGggZmlsbD0iI2ZmZiIgZD0ibTIxIDQtNC0yYTEgMSAwIDAgMC0xIDBsLTggOC00LTNhMSAxIDAgMCAwLTEgMEwyIDhhMSAxIDAgMCAwIDAgMWwzIDMtMyAzYTEgMSAwIDAgMCAwIDFsMSAxYTEgMSAwIDAgMCAxIDBsNC0zIDggOGExIDEgMCAwIDAgMSAwbDQtMmExIDEgMCAwIDAgMS0xVjVhMSAxIDAgMCAwLTEtMXptLTQgMTItNi00IDYtNXoiLz48L3N2Zz4=&logoColor=white" alt="MSVC 2015+" title="Supported Windows Compiler: MSVC 2015 or later">&thinsp;<img src="https://img.shields.io/badge/MinGW%206.4+%20-flag.svg?color=555555&style=flat&logo=data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMzIgMTMyIj48cGF0aCBmaWxsPSIjY2NjIiBkPSJtMCA1MiAyMy0yNCAyNCAyNC0yNCAyM3ptMCA1OCAyMy0yNCAyNCAyNC0yNCAyM3oiLz48cGF0aCBmaWxsPSIjN2Q3ZDdkIiBkPSJtMjkgODEgMjMtMjQgMjQgMjQtMjQgMjN6bS0xLTU4TDUyIDBsMjMgMjMtMjMgMjR6Ii8+PHBhdGggZmlsbD0iI2NjYyIgZD0ibTU3IDUyIDI0LTIzIDIzIDIzLTIzIDI0eiIvPjxwYXRoIGZpbGw9IiM3ZDdkN2QiIGQ9Im04NiAyMyAyNC0yMyAyMyAyMy0yMyAyNHoiLz48cGF0aCBmaWxsPSIjY2NjIiBkPSJtNTcgMTA5IDI0LTIzIDIzIDIzLTIzIDIzeiIvPjxwYXRoIGZpbGw9IiM3ZDdkN2QiIGQ9Im04NiA4MSAyMy0yNCAyMyAyNC0yMyAyM3oiLz48L3N2Zz4=&logoColor=white">&thinsp;<img src="https://img.shields.io/badge/GCC%204.9+-flag.svg?color=555555&style=flat&logo=gnu&logoColor=white" alt="GCC 4.9+" title="Supported Unix Compiler: GCC 4.9 or later">&thinsp;<img src="https://img.shields.io/badge/Clang%203.6+-flag.svg?color=555555&style=flat&logo=llvm&logoColor=white" alt="Clang 3.6+" title="Supported Unix Compiler: Clang 3.5 or later">&thinsp;<a href="https://www.codefactor.io/repository/github/rikyoz/bit7z" alt="Codefactor Grade"><img alt="CodeFactor Grade" src="https://img.shields.io/codefactor/grade/github/rikyoz/bit7z?label=Code%20Quality&logo=codefactor&logoColor=white"></a>&thinsp;<a href="https://github.com/rikyoz/bit7z/blob/master/LICENSE" title="Project License: MPLv2"><img src="https://img.shields.io/badge/-MPL--2.0-lightgrey.svg?style=flat&logo=mozilla" alt="License"></a>
+</div>
 
-## Supported Features
 
-+ **Compression** using the following archive formats: 7z, XZ, BZIP2, GZIP, TAR, ZIP and WIM.
-+ **Extraction** of the following archive formats: 7z, AR, ARJ, BZIP2, CAB, CHM, CPIO, CramFS, DEB, DMG, EXT, FAT, GPT, GZIP, HFS, HXS, IHEX, ISO, LZH, LZMA, MBR, MSI, NSIS, NTFS, QCOW2, RAR, RAR5, RPM, SquashFS, TAR, UDF, UEFI, VDI, VHD, VMDK, WIM, XAR, XZ, Z and ZIP.
-+ **Reading metadata** of archives and of their content (from v3.x).
-+ **Testing** archives for errors (from v3.x).
-+ **Updating** existing file archives (from v3.1.x).
-+ **Compression and extraction _to and from_ memory** (from v2.x &mdash; compression to memory is supported only for BZIP2, GZIP, XZ and TAR formats).
-+ **Compression and extraction _to and from_ C++ standard streams** (from v3.1.x).
-+ Compression using a **custom directory system** in the output archives (from v3.x)
-+ **Selective extraction** of only specified files/folders **using wildcards** (from v3.x) and **regexes** (from v3.1.x).
-+ Creation of **encrypted archives** (strong AES-256 encryption &mdash; only for 7z and ZIP formats).
+## ⚡️ Introduction
+
+**bit7z** is a _cross-platform_ C++ static library that allows the _compression/extraction of archive files_ through a _clean_ and _simple_ wrapper interface to the dynamic libraries from the [7-Zip](https://www.7-zip.org/ "7-Zip Project Homepage") project.<br/>
+It supports compression and extraction to and from the filesystem or the memory, reading archives metadata, updating existing ones, creating multi-volume archives, operation progress callbacks, and many other functionalities.
+
+## 🎯 Supported Features
+
++ **Compression** using the following archive formats: **7z**, XZ, **BZIP2**, **GZIP**, TAR, **ZIP**, and WIM.
++ **Extraction** of many archive formats: **7z**, AR, ARJ, **BZIP2**, CAB, CHM, CPIO, CramFS, DEB, DMG, EXT, FAT, GPT, **GZIP**, HFS, HXS, IHEX, ISO, LZH, LZMA, MBR, MSI, NSIS, NTFS, QCOW2, **RAR**, **RAR5**, RPM, SquashFS, TAR, UDF, UEFI, VDI, VHD, VMDK, WIM, XAR, XZ, Z, and **ZIP**.
++ **Reading metadata** of archives and their content.
++ **Testing** archives for errors.
++ **Updating** existing file archives with new files.
++ **Renaming**, **updating**, or **deleting** old items in existing file archives.
++ **Compression and extraction _to and from_ memory** and **C++ standard streams**.
++ Compression using **custom path aliases** for the items in the output archives.
++ **Selective extraction** of only specified files/folders **using wildcards** and **regular expressions**.
++ **Selective extraction of folders**, and **extraction of an archive's root folder content**.
++ **Renaming** the extracted items **via a callback**.
++ **Reading raw extracted data** through a callback.
++ **Reading and extracting nested and sub-archives** without writing the intermediate files.
++ Creation of **encrypted archives** (strong AES-256 encryption; only for 7z and ZIP formats).
 + **Archive header encryption** (only for 7z format).
-+ Choice of the **compression level** (from none to ultra, not all supported by every output archive format).
-+ Choice of the **compression method** (from v3.1.x &mdash; see the [wiki](https://github.com/rikyoz/bit7z/wiki/Advanced-Usage#compression-methods) for the supported methods).
-+ Choice of the compression **dictionary size** (from v3.1.x).
-+ **Automatic input archive format detection** (from v3.1.x).
++ Possibility to choose the **compression level** (if supported by the archive format), the **compression method** ([supported methods](https://github.com/rikyoz/bit7z/wiki/Advanced-Usage#compression-methods "Wiki page on bit7z's supported compression methods")), the **dictionary size**, and the **word size**.
++ **Automatic input archive format detection**.
++ Opening **self-extracting (SFX) archives** and executables with appended data.
++ **Deferred loading** of the 7-Zip shared library.
 + **Solid archives** (only for 7z).
-+ **Multi-volume archives** (from v2.1.x).
-+ **Operation callbacks**, through which it is possible to obtain real time information about the ongoing extraction or compression operation (from v2.1.x).
++ **Multi-volume archives**.
++ **Operation callbacks** for obtaining real-time information about ongoing operations.
++ **Canceling** or **pausing** the current operation.
 
-Please note that the presence or not of some of the above features depends on the particular .dll used along with bit7z.
+> [!NOTE]
+>
+> The presence or not of some of the above features depends on the specific 7-Zip shared library used. 
+>
+> For example, 7z.dll should support all these features, 7za.dll should work only with the 7z file format, and 7zxa.dll can only extract 7z files.
+>
+> For more information about the 7-Zip DLLs, please check this [wiki page](https://github.com/rikyoz/bit7z/wiki/7z-DLLs).
 
-For example, the 7z.dll should support all these features, while 7za.dll should support only the 7z file format and the 7zxa.dll can only extract 7z files. For more information about the 7-zip DLLs, please see this [wiki page](https://github.com/rikyoz/bit7z/wiki/7z-DLLs).
+> [!NOTE]
+>
+> Some features (e.g., _automatic format detection_ and _selective extraction using regular expressions_) are disabled by default, and macro definitions must be used during compilation to have them available ([wiki](https://github.com/rikyoz/bit7z/wiki/Building-the-library)).
 
-In the end, some other features (e.g. _automatic format detection_ and _selective extraction using regexes_) are disabled by default and macros defines must be used during compilation to have them available ([wiki](https://github.com/rikyoz/bit7z/wiki/Building-the-library)).
+## 🔥 Getting Started (Library Usage)
 
-## Getting Started (Library Usage)
+Below are a few examples that show how to use some of the main features of bit7z.
 
-Below are a few examples that show how to use some of the main features of bit7z:
-
-### Extracting files from an archive
+### 📂 Extracting Files from an Archive
 
 ```cpp
-#include "bitextractor.hpp"
+#include <bit7z/bitfileextractor.hpp>
 
-using namespace  bit7z;
+try { // bit7z classes can throw BitException objects
+    using namespace bit7z;
 
-try {
-    Bit7zLibrary lib{ L"7za.dll" };
-    BitExtractor extractor{ lib, BitFormat::SevenZip };
+    Bit7zLibrary lib{ "7za.dll" };
+    BitFileExtractor extractor{ lib, BitFormat::SevenZip };
 
-    extractor.extract( L"path/to/archive.7z", L"out/dir/" ); //extracting a simple archive
+    // Extracting a simple archive
+    extractor.extract( "path/to/archive.7z", "out/dir/" );
 
-    extractor.extractMatching( L"path/to/arc.7z", L"file.pdf", L"out/dir/" ); //extracting a specific file
+    // Extracting a specific file inside an archive
+    extractor.extractMatching( "path/to/archive.7z", "file.pdf", "out/dir/" );
 
-    //extracting the first file of an archive to a buffer
+    // Extracting the first file of an archive to a buffer
     std::vector< byte_t > buffer;
-    extractor.extract( L"path/to/archive.7z", buffer );
+    extractor.extract( "path/to/archive.7z", buffer );
 
-    //extracting an encrypted archive
-    extractor.setPassword( L"password" );
-    extractor.extract( L"path/to/another/archive.7z", L"out/dir/" );
-} catch ( const BitException& ex ) {
-    //do something with ex.what()...
-}
+    // Extracting an encrypted archive
+    extractor.setPassword( "password" );
+    extractor.extract( "path/to/another/archive.7z", "out/dir/" );
+} catch ( const bit7z::BitException& ex ) { /* Do something with ex.what()...*/ }
 ```
 
-### Compressing files into an archive
+Alternatively, if you only need to work on a single archive:
 
 ```cpp
-#include "bitcompressor.hpp"
+#include <bit7z/bitarchivereader.hpp>
 
-using namespace bit7z;
+try { // bit7z classes can throw BitException objects
+    using namespace bit7z;
 
-try {
-    Bit7zLibrary lib{ L"7z.dll" };
-    BitCompressor compressor{ lib, BitFormat::Zip };
+    Bit7zLibrary lib{ "7z.dll" };
 
-    std::vector< std::wstring > files = { L"path/to/file1.jpg", L"path/to/file2.pdf" };
+    // Opening the archive
+    BitArchiveReader archive{ lib, "path/to/archive.gz", BitFormat::GZip };
 
-    compressor.compress( files, L"output_archive.zip" ); //creating a simple zip archive
+    // Testing the archive
+    archive.test();
 
-    //creating a zip archive with a custom directory structure
-    std::map< std::wstring, std::wstring > files_map = { { L"path/to/file1.jpg", L"alias/path/file1.jpg" },
-    { L"path/to/file2.pdf", L"alias/path/file2.pdf" } };
-    compressor.compress( files_map, L"output_archive2.zip" );
+    // Extracting the archive
+    archive.extractTo( "out/dir/" );
+} catch ( const bit7z::BitException& ex ) { /* Do something with ex.what()...*/ }
+```
 
-    compressor.compressDirectory( L"dir/path/", L"dir_archive.zip" ); //compressing a directory
+### 💼 Compressing Files into an Archive
 
-    //creating an encrypted zip archive of two files
-    compressor.setPassword( L"password" );
-    compressor.compressFiles( files, L"protected_archive.zip" );
+```cpp
+#include <bit7z/bitfilecompressor.hpp>
 
-    //updating an existing zip archive
-    compressor.setUpdateMode( true );
-    compressor.compressFiles( files, L"existing_archive.zip" );
+try { // bit7z classes can throw BitException objects
+    using namespace bit7z;
 
-    //compressing a single file into a buffer
-    std::vector< byte_t > buffer;
-    BitCompressor compressor2{ lib, BitFormat::BZip2 };
+    Bit7zLibrary lib{ "7z.dll" };
+    BitFileCompressor compressor{ lib, BitFormat::Zip };
+
+    std::vector< std::string > files = { "path/to/file1.jpg", "path/to/file2.pdf" };
+
+    // Creating a simple zip archive
+    compressor.compress( files, "output_archive.zip" );
+
+    // Creating a zip archive with a custom directory structure
+    std::map< std::string, std::string > files_map = {
+        { "path/to/file1.jpg", "alias/path/file1.jpg" },
+        { "path/to/file2.pdf", "alias/path/file2.pdf" }
+    };
+    compressor.compress( files_map, "output_archive2.zip" );
+
+    // Compressing a directory
+    compressor.compressDirectory( "dir/path/", "dir_archive.zip" );
+
+    // Creating an encrypted zip archive of two files
+    compressor.setPassword( "password" );
+    compressor.compressFiles( files, "protected_archive.zip" );
+
+    // Updating an existing zip archive
+    compressor.setUpdateMode( UpdateMode::Append );
+    compressor.compressFiles( files, "existing_archive.zip" );
+
+    // Compressing a single file into a buffer
+    std::vector< bit7z::byte_t > buffer;
+    BitFileCompressor compressor2{ lib, BitFormat::BZip2 };
     compressor2.compressFile( files[0], buffer );
-} catch ( const BitException& ex ) {
-    //do something with ex.what()...
-}
+} catch ( const bit7z::BitException& ex ) { /* Do something with ex.what()...*/ }
 ```
 
-### Reading archive metadata
+Alternatively, if you only need to work on a single archive:
 
 ```cpp
-#include "bitarchiveinfo.hpp"
+#include <bit7z/bitarchivewriter.hpp>
 
-using namespace bit7z;
+try { // bit7z classes can throw BitException objects
+    using namespace bit7z;
 
-try {
-    Bit7zLibrary lib{ L"7za.dll" };
-    BitArchiveInfo arc{ lib, L"archive.7z", BitFormat::SevenZip };
+    Bit7zLibrary lib{ "7z.dll" };
+    BitArchiveWriter archive{ lib, BitFormat::SevenZip };
 
-    //printing archive metadata
-    wcout << L"Archive properties" << endl;
-    wcout << L" Items count: "   << arc.itemsCount() << endl;
-    wcout << L" Folders count: " << arc.foldersCount() << endl;
-    wcout << L" Files count: "   << arc.filesCount() << endl;
-    wcout << L" Size: "          << arc.size() << endl;
-    wcout << L" Packed size: "   << arc.packSize() << endl;
-    wcout << endl;
+    // Adding the items to be compressed (no compression is performed here)
+    archive.addFile( "path/to/file.txt" );
+    archive.addDirectory( "path/to/dir/" );
 
-    //printing archive items metadata
-    wcout << L"Archive items";
-    auto arc_items = arc.items();
-    for ( auto& item : arc_items ) {
-        wcout << endl;
-        wcout << L" Item index: "   << item.index() << endl;
-        wcout << L"  Name: "        << item.name() << endl;
-        wcout << L"  Extension: "   << item.extension() << endl;
-        wcout << L"  Path: "        << item.path() << endl;
-        wcout << L"  IsDir: "       << item.isDir() << endl;
-        wcout << L"  Size: "        << item.size() << endl;
-        wcout << L"  Packed size: " << item.packSize() << endl;
+    // Compressing the added items to the output archive
+    archive.compressTo( "output.7z" );
+} catch ( const bit7z::BitException& ex ) { /* Do something with ex.what()...*/ }
+```
+
+### 📑 Reading Archive Metadata
+
+```cpp
+#include <bit7z/bitarchivereader.hpp>
+
+try { // bit7z classes can throw BitException objects
+    using namespace bit7z;
+
+    Bit7zLibrary lib{ "7za.dll" };
+    BitArchiveReader arc{ lib, "archive.7z", BitFormat::SevenZip };
+
+    // Printing archive metadata
+    std::cout << "Archive properties\n";
+    std::cout << "  Items count: "   << arc.itemsCount() << '\n';
+    std::cout << "  Folders count: " << arc.foldersCount() << '\n';
+    std::cout << "  Files count: "   << arc.filesCount() << '\n';
+    std::cout << "  Size: "          << arc.size() <<'\n';
+    std::cout << "  Packed size: "   << arc.packSize() << "\n\n";
+
+    // Printing the metadata of the archived items
+    std::cout << "Archived items";
+    for ( const auto& item : arc ) {
+        std::cout << '\n';
+        std::cout << "  Item index: "    << item.index() << '\n';
+        std::cout << "    Name: "        << item.name() << '\n';
+        std::cout << "    Extension: "   << item.extension() << '\n';
+        std::cout << "    Path: "        << item.path() << '\n';
+        std::cout << "    IsDir: "       << item.isDir() << '\n';
+        std::cout << "    Size: "        << item.size() << '\n';
+        std::cout << "    Packed size: " << item.packSize() << '\n';
+        std::cout << "    CRC: " << std::hex << item.crc() << std::dec << '\n';
     }
-} catch ( const BitException& ex ) {
-    //do something with ex.what()...
-}
+    std::cout.flush();
+} catch ( const bit7z::BitException& ex ) { /* Do something with ex.what()...*/ }
 ```
 
 A complete _**API reference**_ is available in the [wiki](https://github.com/rikyoz/bit7z/wiki/) section.
 
-## Download
+### 🚀 Upgrading from bit7z v3 to v4
+
+The newest bit7z v4 introduced some significant breaking changes to the library's API.
+
+<details>
+  <summary>Expand for more details!</summary>
+
++ By default, the project now follows the [UTF-8 Everywhere Manifesto](http://utf8everywhere.org/):
+  + The default string type is `std::string` (instead of `std::wstring`), so users can use the library in cross-platform projects more easily (v4 introduced Linux/macOS support too).
+  + Input `std::string`s will be considered as UTF-8 encoded.
+  + You can still achieve the old behavior on Windows using the `-DBIT7Z_USE_NATIVE_STRING` CMake option.
++ The old `BitExtractor` class is now called `BitFileExtractor`.
+  + Now `BitExtractor` is just the name of a template class for all the extraction classes.
++ The old `BitCompressor` class is now called `BitFileCompressor`.
+  + Now `BitCompressor` is just the name of a template class for all the compression classes.
++ The old `BitArchiveInfo` class is now called `BitArchiveReader`, and it allows to extract single archives.
++ The `ProgressCallback` now must return a `bool` value indicating whether the current operation can continue (`true`) or not (`false`).
++ The `BitException` class now inherits from `std::system_error` rather than `std::runtime_error`.
+  + The method `BitException::getErrorCode()` was renamed `BitException::hresultCode()`.
++ The project structure changed:
+  + Public API headers moved from `include/` to the `include/bit7z/` folder, so `#include` directives now need to prepend `bit7z/` to the included header name (e.g., `#include <bit7z/bitfileextractor.hpp>`).
+    + Even though it is a bit verbose, it is a typical structure for C and C++ libraries, and it makes explicit which third-party library a header file belongs to.
+  + By default, the output folder of bit7z is now `lib/<architecture>/`; if the CMake generator is multi-config (e.g., Visual Studio generators), the default output folder is `lib/<architecture>/<build type>/`.
+    + Optionally, you can force using the "Visual Studio style" output path by enabling the `BIT7Z_VS_LIBNAME_OUTDIR_STYLE` CMake option.
+  + Third-party dependencies are no longer handled using git submodules but are automatically downloaded using [CPM.cmake](https://github.com/cpm-cmake/CPM.cmake) when configuring/using the library via CMake.
+
+</details>
+
+## 💾 Download
 
 <div align="center">
-<a href="https://github.com/rikyoz/bit7z/releases/latest">
-<img alt="Github All Releases" src="https://img.shields.io/github/v/release/rikyoz/bit7z?label=Latest%20Release&logo=github&style=social" height='36' style='border:0px;height:36px;'/></a>
+<a href="https://github.com/rikyoz/bit7z/releases"><img alt="GitHub Latest Release" src="https://img.shields.io/github/v/release/rikyoz/bit7z?sort=semver&label=Latest%20Release&style=social" height='36' style='border:0;height:36px;'/></a>
 <br/>
-<a href="https://github.com/rikyoz/bit7z/releases/latest">
-<img alt="Github All Releases" src="https://img.shields.io/github/downloads/rikyoz/bit7z/total.svg?style=popout-square&label=total%20downloads&logo=icloud&logoColor=white"/></a>
+<a href="https://github.com/rikyoz/bit7z/releases">
+<img alt="GitHub All Releases" src="https://img.shields.io/github/downloads/rikyoz/bit7z/total.svg?style=popout&label=Total%20Downloads&logo=icloud&logoColor=white"/></a>
 </div>
 
-Each released package contains a _precompiled version_ of the library (both in _debug_ and _release_ mode) and the _public API headers_ that are needed to use it in your program; packages are available for both _x86_ and _x64_ architectures.
+Each released package contains:
 
-Obviously, you can also clone/download this repository and build the library by yourself (please, see the [wiki](https://github.com/rikyoz/bit7z/wiki/Building-the-library)).
++ A _pre-compiled version_ of bit7z (both in _debug_ and _release_ mode);
++ The _public API headers_ needed to use the library in your program;
 
-## Requirements
+Packages are available for both _x86_ and _x64_ architectures.
 
-+ **Target OS:** Windows (both x86 and x64).
-+ **Compiler:** MSVC 2012 or greater (MSVC 2010 supported until v2.x).
-+ **DLLs:** 7-zip DLLs (v19.00 for the GitHub release packages).
+You can also clone/download this repository and build the library yourself (please, read the [wiki](https://github.com/rikyoz/bit7z/wiki/Building-the-library)).
 
-The 7-zip dlls are not shipped with bit7z but they are available at [7-zip.org](http://www.7-zip.org/).
+## 🧰 Requirements
 
-**Note**: in order to use this library you should link your program not only with **bit7z** but also with *oleaut32* and *user32* (e.g. `-lbit7z -loleaut32 -luser32`).
++ **Operating System:** Windows, Linux, macOS, Android.
++ **Architecture:** x86, x86_64, arm, arm64.
++ **Language Standard:** C++11 (for using the library), C++14 (for building the library).
++ **Compiler:** MSVC 2015 or later[^1], MinGW v6.4 or later, GCC v4.9 or later, Clang 3.6 or later.
++ **Shared Library:** a 7-Zip `.dll` library on Windows, a 7-Zip/p7zip `.so` library on Unix.
 
-**Note 2**: even if compiled with the latest version of 7-zip, **bit7z** _should_ work also with the dlls of previous versions, such as v16.04. However, it is _strongly suggested_ to use dlls with the same version.
+> [!NOTE]
+>
+> + **RAR Archive Support:** The library supports RAR archives *only* when using 7-Zip's `7z.dll`/`7z.so`. It doesn't support p7zip's unrar plugin. For RAR extraction on Unix-based systems, you need to build the 7-Zip `7z.so` library.
+> + **7-Zip Libraries:** Bit7z does **not** ship with the 7-Zip shared libraries. You can download the precompiled binaries or build them from the source at [7-zip.org](https://www.7-zip.org/).
 
-**Note 3**: the code has been tested with MSVC 2012, 2015, 2017 and 2019.
+[^1]: MSVC 2010 was supported until v2.x, MSVC 2012/2013 until v3.x.
 
-## Building bit7z
+## 🔗 Installation
 
-A guide on how to build this library is available [here](https://github.com/rikyoz/bit7z/wiki/Building-the-library).
+The library can be installed as a dependency of your project in a number of different ways:
 
-## Donations
+### Using CMake's `add_subdirectory`
 
-If you have found this project useful, please consider supporting it with a small donation or buying me a coffee/beer, so that I can keep improving it!
-Thank you! :)
+You can directly integrate the library into your CMake project:
 
-<div align="center">
++ Either download bit7z's sources to a sub-directory of your project (e.g., `third_party`), or add this repository as a git submodule of yours.
++ Then, use the command `add_subdirectory()` in your `CMakeLists.txt` to include bit7z.
++ Finally, link the `bit7z` library using the `target_link_libraries()` command.
 
-[<img alt="Beerpay" src="https://beerpay.io/rikyoz/bit7z/badge.svg" height='43' style='border:0px;height:43px;' >](https://beerpay.io/rikyoz/bit7z) <a href='https://ko-fi.com/G2G1LS1P' target='_blank'><img height='24' style='border:0px;height:24px;' src='https://img.shields.io/badge/-buy%20me%20a%20coffee-red?logo=ko-fi&style=flat-square&logoColor=white' border='0' alt='Buy Me a Coffee at ko-fi.com' /></a> <a href="https://www.paypal.com/cgi-bin/webscr?cmd=_s-xclick&hosted_button_id=NTZF5G7LRXDRC"><img src="https://img.shields.io/badge/-donate%20on%20PayPal-yellow.svg?style=flat-square&logo=data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABBCAMAAABW61JJAAAAM1BMVEUAAAD///////////////////////////////////////////////////////////////+3leKCAAAAEHRSTlMAv0CA7xBgrzDfn3BQIM+PWN4WLwAAAfhJREFUeF69llmS3CAQRLMWNi0t7n9ax/RI7lCOQMh2+H0DovQqo8A/RpNcksw0455Yu8i8ostabxFFB6sDSOcWqY7gC1p4HSPimlxHyU8dMAWXTJV4WkSpf3eFUIkib7xekC96aqE1M3ayeWXmxSOIjfd/CFMlNjjbhFCV3R4TJLaJemLqx0RgbFOpgr4igfKiud9scnVAaVfpuD2AP+O0gHjxL1JSRX/JbrrMoPSrKUl6EzRFpItSkm4qqICdDuAVLwAdRTXtWqRV48YFELpvkFaSllNMt4s0R5JlzRuEWCqjR3JSq0/2rKqa1J8kQNl2fcArAEK2tY7j+WMlkKbR/dl3m5SkEUoGQmFZ8DqIBCAcwSqUpHt8BpALBWZ8Jk0BwOIfm49mkk8rgJDqQQmUpC4pvpebn2xQkhq4mH4vs3K2yUn68JI3ZrZoOCKR2CZaSXLFmXUxYZvgmUSXy/rFbGYilzb7MynInc3eTIpdK76tIDhJa7uvPMX71503+qok06HXXQLKyeZkZqrjD9z56Kui6NGZScths0tnJm00GvqwMwFktzkGJ8mAw2af9kxSfmT14SQF2G5zFOGxnHabf3aAHX2VMcpGScy7zWGCycE7KkZz+yE8dsdZ9YtlopkxzsY2n8KPrMc42XzMRIl6TJjkNxH/kV+EeH5bYbU1DgAAAABJRU5ErkJggg==&logoColor=white" alt="Donations" height='24' style='border:0px;height:24px;'></a>
+For example:
 
-</div>
-
-## License (GPL v2)
-
-```markdown
-This program is free software; you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation; either version 2 of the License, or
-(at your option) any later version.
-
-This program is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-GNU General Public License for more details.
-
-You should have received a copy of the GNU General Public License along
-with this program; if not, write to the Free Software Foundation, Inc.,
-51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+```cmake
+add_subdirectory(${CMAKE_SOURCE_DIR}/third_party/bit7z) # Path to bit7z's repository
+# Here you can enable/disable bit7z's build options, e.g.:
+# set(BIT7Z_USE_NATIVE_STRING ON CACHE BOOL "enable using native OS strings" FORCE)
+target_link_libraries(${YOUR_TARGET} PRIVATE bit7z)
 ```
 
+### Using [CPM.cmake](https://github.com/cpm-cmake/CPM.cmake)
+
+```cmake
+CPMAddPackage("gh:rikyoz/bit7z@<version>") # Replace <version> with the desired one.
+# Here you can enable/disable bit7z's build options, e.g.:
+# set(BIT7Z_AUTO_FORMAT ON CACHE BOOL "enable auto format support" FORCE)
+target_link_libraries(${YOUR_TARGET} PRIVATE bit7z)
+```
+
+### Using [vcpkg](https://vcpkg.io/en/)
+
+First, you need to install the library:
+
+```cmd
+vcpkg install bit7z
+```
+
+Then, you add bit7z as a dependency in your project's `CMakeLists.txt`:
+
+```cmake
+find_package(bit7z CONFIG REQUIRED)
+target_link_libraries(${YOUR_TARGET} PRIVATE bit7z::bit7z)
+```
+
+### Building from source and manually linking
+
+The wiki provides instructions on how to [build](https://github.com/rikyoz/bit7z/wiki/Building-the-library) the library from the source code and [manually link](https://github.com/rikyoz/bit7z/wiki/Installing-the-library#manually-linking) it into your project.
+
+## 🛠️ Configuration
+
+The library is highly customizable: for a detailed list of the available build options, please refer to the [wiki](https://github.com/rikyoz/bit7z/wiki/Build-options).
+
+### 📌 7-Zip Version
+
+While configuring bit7z via CMake, it automatically downloads the latest version of 7-Zip supported by the library.
+
+Optionally, you can specify a different version of 7-Zip via the CMake option `BIT7Z_7ZIP_VERSION` (e.g., `-DBIT7Z_7ZIP_VERSION="22.01"`).
+
+Alternatively, you can specify a custom path containing the 7-Zip source code via the option `BIT7Z_CUSTOM_7ZIP_PATH`.
+
+> [!NOTE]
+>
+> In general, it is best to use the same version of 7-Zip of the shared libraries that you will use at runtime.
+>
+
+#### Using 7-Zip v23.01 on Linux and macOS
+
+By default, bit7z is compatible with the `7z.so` from 7-Zip v23.01 and later.
+
+If you plan to use the `7z.so` from p7zip or 7-Zip v22.01 and earlier instead, you have two ways to make bit7z compatible:
+
++ Configure bit7z with the CMake option `-DBIT7Z_USE_LEGACY_IUNKNOWN=ON`; _or_
++ Configure bit7z for 7-Zip v22.01 (i.e., `-DBIT7Z_7ZIP_VERSION="22.01"`).
+
+<details>
+  <summary>Expand for more details</summary>
+
+_On Linux and macOS_, 7-Zip v23.01 introduced breaking changes to the IUnknown interface.
+As a result, if you build bit7z for such a version of 7-Zip (the default), it will not support using the shared libraries from previous versions of 7-Zip (or from p7zip).
+Conversely, bit7z made for earlier versions of 7-Zip or for p7zip is incompatible with the shared libraries from 7-Zip v23.01 and later.
+
+You can build the shared libraries of 7-Zip v23.01 in a backward-compatible mode by defining the macro `Z7_USE_VIRTUAL_DESTRUCTOR_IN_IUNKNOWN`.
+If this is your case, you'll need to enable the `BIT7Z_USE_LEGACY_IUNKNOWN` to make bit7z work (in this case, bit7z will be compatible also with previous versions of 7-Zip/p7zip).
+
+</details>
+
+### 🗺️ String Encoding
+
+By default, bit7z follows the [UTF-8 Everywhere Manifesto](http://utf8everywhere.org/) to simplify the use of the library within cross-platform projects.
+In short, this means that:
+
++ The default path string type is `std::string`.
++ Input `std::string`s are considered as UTF-8 encoded; output `std::string`s are UTF-8 encoded.
+
+<details>
+  <summary>Expand for more details and for other string encoding options!</summary>
+
+On POSIX systems, `std::string`s are usually already UTF-8 encoded, and no configuration is needed.
+
+The situation is a bit more complex on Windows since, by default, Windows treats `std::string`s as encoded using the system code page, which may not necessarily be UTF-8, like, for example, [Windows-1252](https://en.wikipedia.org/wiki/Windows-1252).
+
+If your program deals exclusively with ASCII-only strings, you should be fine with the default bit7z settings (as ASCII characters are also UTF-8).
+
+However, if you need to handle non-ASCII/Unicode characters, as it is likely, you have the following options:
+
++ Enforcing using the UTF-8 code page for your whole application, as explained by Microsoft [here](https://learn.microsoft.com/en-us/windows/apps/design/globalizing/use-utf8-code-page):
+  + _**Recommended**_, but supported only since Windows 10 1903 and later.
++ Manually ensuring the encoding of the `std::string`s passed to bit7z:
+  + You can use some string encoding library or C++11's UTF-8 string literals for input strings.
+  + User-input strings (e.g., the password of an archive) can be handled as explained [here](https://nullprogram.com/blog/2020/05/04/); in short: read the input as an UTF-16 wide string (e.g., via `ReadConsoleW`), and convert it to UTF-8 (bit7z provides a utility function for this, `bit7z::to_tstring`).
+  + You can correctly print the UTF-8 output strings from bit7z (e.g., the path/name metadata of a file in an archive) to the console by calling [`SetConsoleOutputCP(CP_UTF8)`](https://learn.microsoft.com/en-us/windows/console/setconsoleoutputcp) before.
++ Configuring bit7z to use UTF-16 encoded wide strings (i.e., `std::wstring`) by enabling the `BIT7Z_USE_NATIVE_STRING` option via CMake.
+  + If your program is Windows-only, or you already use wide strings on Windows, this might be the best choice since it will avoid any internal string conversions (7-Zip always uses wide strings).
+  + This option makes developing cross-platform applications slightly inconvenient since you'll still have to use `std::string` on POSIX systems.
+  + The library provides a type alias `bit7z::tstring` and a macro function `BIT7Z_STRING` for defining wide string variables and literals on Windows and narrow ones on other platforms.
+  + You must programmatically set the standard input and output encoding to UTF-16 to correctly read and print Unicode characters:
+
+    ```cpp
+    #include <fcntl.h> //for _O_U16TEXT
+    #include <io.h>  //for _setmode
+    
+    _setmode(_fileno(stdout), _O_U16TEXT); // setting the stdout encoding to UTF16
+    _setmode(_fileno(stdin), _O_U16TEXT); // setting the stdin encoding to UTF16
+    ```
+
++ Configuring bit7z to use the system code page encoding for `std::string` by enabling the `BIT7Z_USE_SYSTEM_CODEPAGE` option via CMake.
+  + _Not recommended_: using this option, your program will be limited in the set of characters it can pass to and read from bit7z.
+
+</details>
+
+## 🔍 SAST Tools
+
+[PVS-Studio](https://pvs-studio.com/en/pvs-studio/?utm_source=website&utm_medium=github&utm_campaign=open_source) - static analyzer for C, C++, C#, and Java code.
+
+## ☕️ Donate
+
+If you have found this project helpful, please consider supporting me with a small donation so that I can keep improving it!
+Thank you! :pray:
+
+<div align="center">
+<a href='https://github.com/sponsors/rikyoz' target='_blank' title="Support the Maintainer via GitHub Sponsors"><img height='24' style='border:0px;height:24px;' src='https://img.shields.io/badge/-Sponsor%20the%20Maintainer-fafbfc?logo=GitHub%20Sponsors' border='0' alt='Sponsor me on GitHub' /></a>&thinsp;<a href='https://ko-fi.com/G2G1LS1P' target='_blank' title="Support this project via Ko-Fi"><img height='24' style='border:0px;height:24px;' src='https://img.shields.io/badge/-Buy%20Me%20a%20Coffee-red?logo=ko-fi&logoColor=white' border='0' alt='Buy Me a Coffee at ko-fi.com' /></a>&thinsp;<a href="https://www.paypal.com/cgi-bin/webscr?cmd=_s-xclick&hosted_button_id=NTZF5G7LRXDRC" title="Support this project via PayPal"><img src="https://img.shields.io/badge/-Donate%20on%20PayPal-yellow.svg?logo=paypal&logoColor=white" alt="Donations" height='24' style='border:0px;height:24px;'></a>
+</div>
+
+## 📜 License
+
+This project is licensed under the terms of the [Mozilla Public License v2.0](https://www.mozilla.org/en-US/MPL/2.0/).<br/>
+For more details, please check:
+
++ The [LICENSE](./LICENSE) file.
++ [Mozilla's MPL-2.0 FAQ](https://www.mozilla.org/en-US/MPL/2.0/FAQ/)
+
+Older versions (v3.x and earlier) of bit7z were released under the [GNU General Public License v2](https://www.gnu.org/licenses/old-licenses/gpl-2.0.en.html).
+
 <br/>
 <div align="center">
-
-Copyright &copy; 2014 - 2019 Riccardo Ostani (<a href="https://github.com/rikyoz">@rikyoz</a>)
-
+Copyright &copy; 2014 - 2024 Riccardo Ostani (<a href="https://github.com/rikyoz">@rikyoz</a>)
 </div>
+<br/>
